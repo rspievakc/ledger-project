@@ -27,7 +27,7 @@ dependencies {
     implementation("org.springdoc:springdoc-openapi-starter-webmvc-ui:2.6.0")
 
     testImplementation("org.springframework.boot:spring-boot-starter-test")
-    testImplementation("org.assertj:assertj-core")
+    // assertj-core arrives transitively via spring-boot-starter-test (BOM-managed).
 }
 
 tasks.test {
@@ -37,6 +37,13 @@ tasks.test {
 
 jacoco {
     toolVersion = "0.8.12"
+}
+
+tasks.named<JacocoReport>("jacocoTestReport") {
+    reports {
+        xml.required.set(true)
+        html.required.set(true)
+    }
 }
 
 tasks.named<BootBuildImage>("bootBuildImage") {
