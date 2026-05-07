@@ -93,6 +93,14 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(code.status()).body(body);
     }
 
+    @ExceptionHandler(IdempotencyKeyMissingException.class)
+    public ResponseEntity<ErrorResponse> idempotencyKeyMissing(IdempotencyKeyMissingException ex) {
+        ErrorCode code = ErrorCode.IDEMPOTENCY_KEY_REQUIRED;
+        ErrorResponse body = new ErrorResponse(
+            code.name(), ex.getMessage(), Map.of(), MDC.get(RequestIdFilter.MDC_KEY));
+        return ResponseEntity.status(code.status()).body(body);
+    }
+
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ErrorResponse> uncaught(Exception ex) {
         log.error("uncaught exception", ex);
