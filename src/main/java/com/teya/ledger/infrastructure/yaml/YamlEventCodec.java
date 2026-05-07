@@ -19,19 +19,23 @@ import java.util.stream.Collectors;
  * separator {@code ---}, allowing a stream file to be parsed
  * incrementally and a torn final document to be detected and
  * truncated on recovery.
+ *
+ * <p>Thread-safety: every method allocates a fresh {@link Yaml}
+ * instance because SnakeYAML's {@code Yaml} class is not documented
+ * as thread-safe and shows real interference under concurrent
+ * encode/decode calls. The codec itself is stateless, so a single
+ * shared instance is safe to use from multiple threads.
  */
 final class YamlEventCodec {
 
-    private final Yaml yaml;
-
-    YamlEventCodec() {
+    private static Yaml newYaml() {
         DumperOptions dump = new DumperOptions();
         dump.setExplicitStart(true);
         dump.setDefaultFlowStyle(DumperOptions.FlowStyle.BLOCK);
         Representer representer = new Representer(dump);
         LoaderOptions load = new LoaderOptions();
         load.setAllowDuplicateKeys(false);
-        this.yaml = new Yaml(new SafeConstructor(load), representer, dump);
+        return new Yaml(new SafeConstructor(load), representer, dump);
     }
 
     /**
@@ -44,7 +48,7 @@ final class YamlEventCodec {
         mapping.put("type", record.type());
         mapping.put("occurredAt", record.occurredAt().toString());
         mapping.put("payload", new LinkedHashMap<>(record.payload()));
-        return yaml.dump(mapping);
+        return newYaml().dump(mapping);
     }
 
     /**
@@ -87,6 +91,6 @@ final class YamlEventCodec {
     }
 
     Iterable<Object> loadAll(String text) {
-        return yaml.loadAll(text);
+        return newYaml().loadAll(text);
     }
 }
