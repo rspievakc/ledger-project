@@ -22,6 +22,12 @@ import java.util.UUID;
  * of the persisted contract: changing them would break replay against
  * existing event files. Add new event types and version fields if the
  * schema needs to evolve.
+ *
+ * <p>Each {@code toRecord} call generates a fresh {@link UUID} for
+ * {@code eventId}: that field is metadata about <i>this storage
+ * operation</i>, not about the domain event's identity, so a retried
+ * encode (which the M5 idempotency interceptor prevents from reaching
+ * persistence anyway) would correctly produce a different eventId.
  */
 @Component
 public class EventEnvelopeMapper {
@@ -81,32 +87,36 @@ public class EventEnvelopeMapper {
     public AccountEvent toAccountEvent(EventRecord rec) {
         Map<String, Object> p = rec.payload();
         Instant ts = rec.occurredAt();
-        AccountId accountId = AccountId.of(p.get("accountId").toString());
+        // Switch first so an unknown type produces the typed IllegalStateException
+        // rather than an opaque NPE from accessing payload fields that may not exist.
         return switch (rec.type()) {
             case "AccountOpened" -> new AccountEvent.AccountOpened(
-                accountId,
+                AccountId.of(p.get("accountId").toString()),
                 CustomerId.of(p.get("customerId").toString()),
                 Currency.getInstance(p.get("currency").toString()),
                 ((Number) p.get("initialOverdraftLimitMinorUnits")).longValue(),
                 ts);
             case "MoneyDeposited" -> new AccountEvent.MoneyDeposited(
-                accountId,
+                AccountId.of(p.get("accountId").toString()),
                 ((Number) p.get("amountMinorUnits")).longValue(),
                 Currency.getInstance(p.get("currency").toString()),
                 ts,
                 p.get("idempotencyKey").toString());
             case "MoneyWithdrawn" -> new AccountEvent.MoneyWithdrawn(
-                accountId,
+                AccountId.of(p.get("accountId").toString()),
                 ((Number) p.get("amountMinorUnits")).longValue(),
                 Currency.getInstance(p.get("currency").toString()),
                 ts,
                 p.get("idempotencyKey").toString());
             case "OverdraftLimitChanged" -> new AccountEvent.OverdraftLimitChanged(
-                accountId,
+                AccountId.of(p.get("accountId").toString()),
                 ((Number) p.get("newLimitMinorUnits")).longValue(),
                 ts);
-            case "AccountClosed" -> new AccountEvent.AccountClosed(accountId, ts);
-            default -> throw new IllegalStateException("unknown account event type: " + rec.type());
+            case "AccountClosed" -> new AccountEvent.AccountClosed(
+                AccountId.of(p.get("accountId").toString()), ts);
+            default -> throw new IllegalStateException(
+                "unknown account event type '" + rec.type()
+                    + "' (eventId=" + rec.eventId() + ", seq=" + rec.seq() + ")");
         };
     }
 
@@ -118,7 +128,9 @@ public class EventEnvelopeMapper {
                 CustomerId.of(p.get("customerId").toString()),
                 p.get("name").toString(),
                 rec.occurredAt());
-            default -> throw new IllegalStateException("unknown customer event type: " + rec.type());
+            default -> throw new IllegalStateException(
+                "unknown customer event type '" + rec.type()
+                    + "' (eventId=" + rec.eventId() + ", seq=" + rec.seq() + ")");
         };
     }
 
@@ -128,8 +140,13 @@ public class EventEnvelopeMapper {
      *
      * @param kvs alternating String keys and Object values; length must be even.
      * @return a new {@link LinkedHashMap} with the provided entries.
+     * @throws IllegalArgumentException if {@code kvs.length} is odd.
      */
     private static Map<String, Object> ordered(Object... kvs) {
+        if (kvs.length % 2 != 0) {
+            throw new IllegalArgumentException(
+                "ordered() requires an even number of arguments, got " + kvs.length);
+        }
         Map<String, Object> m = new LinkedHashMap<>();
         for (int i = 0; i < kvs.length; i += 2) {
             m.put(kvs[i].toString(), kvs[i + 1]);

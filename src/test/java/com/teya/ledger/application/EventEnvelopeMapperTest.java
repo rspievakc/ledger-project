@@ -9,8 +9,11 @@ import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
 import java.util.Currency;
+import java.util.Map;
+import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class EventEnvelopeMapperTest {
 
@@ -85,5 +88,46 @@ class EventEnvelopeMapperTest {
         EventRecord rec = mapper.toRecord(original);
         CustomerEvent decoded = mapper.toCustomerEvent(rec);
         assertThat(decoded).isEqualTo(original);
+    }
+
+    @Test
+    void to_account_event_throws_on_unknown_type() {
+        EventRecord rec = new EventRecord(
+            42L, UUID.randomUUID(), "Mystery", ts, Map.of("k", "v"));
+        assertThatThrownBy(() -> mapper.toAccountEvent(rec))
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessageContaining("Mystery")
+            .hasMessageContaining("seq=42");
+    }
+
+    @Test
+    void to_customer_event_throws_on_unknown_type() {
+        EventRecord rec = new EventRecord(
+            7L, UUID.randomUUID(), "Mystery", ts, Map.of("k", "v"));
+        assertThatThrownBy(() -> mapper.toCustomerEvent(rec))
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessageContaining("Mystery")
+            .hasMessageContaining("seq=7");
+    }
+
+    @Test
+    void to_account_event_normalises_integer_amount_to_long() {
+        // Pins the ((Number) ...).longValue() contract: a payload arriving
+        // with Integer-typed numerics (as SnakeYAML 2.x produces for values
+        // that fit in 32 bits when not pre-normalised by YamlEventCodec)
+        // must still decode to a long-valued event field.
+        AccountId accountId = AccountId.random();
+        EventRecord rec = new EventRecord(
+            1L, UUID.randomUUID(), "MoneyDeposited", ts,
+            Map.of(
+                "accountId", accountId.toString(),
+                "amountMinorUnits", 5000,             // boxed Integer, not Long
+                "currency", "GBP",
+                "idempotencyKey", "k1"
+            ));
+        AccountEvent decoded = mapper.toAccountEvent(rec);
+        assertThat(decoded).isInstanceOf(AccountEvent.MoneyDeposited.class);
+        AccountEvent.MoneyDeposited deposit = (AccountEvent.MoneyDeposited) decoded;
+        assertThat(deposit.amountMinorUnits()).isEqualTo(5000L);
     }
 }
