@@ -26,49 +26,80 @@ class AccountFoldTest {
         assertThat(a.balanceMinorUnits()).isZero();
         assertThat(a.overdraftLimitMinorUnits()).isZero();
         assertThat(a.status()).isEqualTo(AccountStatus.OPEN);
+        assertThat(a.openedAt()).isEqualTo(t0);
+        assertThat(a.lastEventOccurredAt()).isEqualTo(t0);
     }
 
     @Test
-    void deposit_increases_balance() {
+    void deposit_increases_balance_and_advances_last_event_timestamp() {
         Account a = fold(
             opened(0L),
             new AccountEvent.MoneyDeposited(accountId, 5_00L, GBP, t0.plusSeconds(1), "k1")
         );
         assertThat(a.balanceMinorUnits()).isEqualTo(500L);
+        assertThat(a.lastEventOccurredAt()).isEqualTo(t0.plusSeconds(1));
+        assertThat(a.openedAt()).isEqualTo(t0);
     }
 
     @Test
-    void withdrawal_decreases_balance() {
+    void withdrawal_decreases_balance_and_advances_last_event_timestamp() {
         Account a = fold(
             opened(0L),
             new AccountEvent.MoneyDeposited(accountId, 10_00L, GBP, t0.plusSeconds(1), "k1"),
             new AccountEvent.MoneyWithdrawn(accountId, 3_00L, GBP, t0.plusSeconds(2), "k2")
         );
         assertThat(a.balanceMinorUnits()).isEqualTo(700L);
+        assertThat(a.lastEventOccurredAt()).isEqualTo(t0.plusSeconds(2));
     }
 
     @Test
-    void overdraft_change_updates_limit() {
+    void overdraft_change_updates_limit_and_advances_last_event_timestamp() {
         Account a = fold(
             opened(0L),
             new AccountEvent.OverdraftLimitChanged(accountId, 50_00L, t0.plusSeconds(1))
         );
         assertThat(a.overdraftLimitMinorUnits()).isEqualTo(5000L);
+        assertThat(a.lastEventOccurredAt()).isEqualTo(t0.plusSeconds(1));
     }
 
     @Test
-    void close_moves_status_to_closed() {
+    void close_moves_status_to_closed_and_advances_last_event_timestamp() {
         Account a = fold(
             opened(0L),
             new AccountEvent.AccountClosed(accountId, t0.plusSeconds(1))
         );
         assertThat(a.status()).isEqualTo(AccountStatus.CLOSED);
+        assertThat(a.lastEventOccurredAt()).isEqualTo(t0.plusSeconds(1));
     }
 
     @Test
     void initial_overdraft_persisted_from_open_event() {
         Account a = fold(opened(20_00L));
         assertThat(a.overdraftLimitMinorUnits()).isEqualTo(2000L);
+    }
+
+    @Test
+    void deposit_and_withdrawal_preserve_overdraft_limit() {
+        Account a = fold(
+            opened(0L),
+            new AccountEvent.OverdraftLimitChanged(accountId, 50_00L, t0.plusSeconds(1)),
+            new AccountEvent.MoneyDeposited(accountId, 10_00L, GBP, t0.plusSeconds(2), "k1"),
+            new AccountEvent.MoneyWithdrawn(accountId, 3_00L, GBP, t0.plusSeconds(3), "k2")
+        );
+        assertThat(a.overdraftLimitMinorUnits()).isEqualTo(5000L);
+        assertThat(a.balanceMinorUnits()).isEqualTo(700L);
+    }
+
+    @Test
+    void withdrawal_can_take_balance_below_zero() {
+        // The fold trusts events; the overdraft check is the command handler's job
+        // (see Account class Javadoc). A persisted withdrawal that exceeds the
+        // balance must project as a negative balance, not throw.
+        Account a = fold(
+            opened(0L),
+            new AccountEvent.MoneyWithdrawn(accountId, 5_00L, GBP, t0.plusSeconds(1), "k1")
+        );
+        assertThat(a.balanceMinorUnits()).isEqualTo(-500L);
     }
 
     @Test
@@ -79,9 +110,19 @@ class AccountFoldTest {
     }
 
     @Test
-    void fold_rejects_first_event_other_than_opened() {
+    void fold_rejects_first_event_money_deposited() {
         assertThatThrownBy(() -> Account.foldFrom(List.of(
             new AccountEvent.MoneyDeposited(accountId, 100L, GBP, t0, "k")
+        ))).isInstanceOf(IllegalStateException.class)
+           .hasMessageContaining("AccountOpened");
+    }
+
+    @Test
+    void fold_rejects_first_event_account_closed() {
+        // Symmetric guard: any non-opened event as the first event must be rejected,
+        // not just MoneyDeposited.
+        assertThatThrownBy(() -> Account.foldFrom(List.of(
+            new AccountEvent.AccountClosed(accountId, t0)
         ))).isInstanceOf(IllegalStateException.class)
            .hasMessageContaining("AccountOpened");
     }

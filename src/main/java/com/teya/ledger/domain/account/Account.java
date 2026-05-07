@@ -15,14 +15,24 @@ import java.util.Objects;
  * of truth is the event stream. Each application of an event returns
  * a new immutable instance.
  *
+ * <p>Business rule validation (e.g., insufficient funds, currency mismatch,
+ * writes against a closed account) is the responsibility of the command
+ * handlers in the application layer that emit events to the stream;
+ * this projection trusts the persisted event log and only enforces
+ * structural invariants (CLOSED-account guard, AccountOpened-twice guard,
+ * arithmetic overflow). It is the read side of a CQRS-flavoured split.
+ *
  * @param id                          the account's stable identifier.
  * @param customerId                  owning customer.
  * @param currency                    fixed at open time.
- * @param balanceMinorUnits           current balance in minor units.
+ * @param balanceMinorUnits           current balance in minor units; may be
+ *                                    negative up to the permitted overdraft.
  * @param overdraftLimitMinorUnits    permitted negative balance, {@code >= 0}.
  * @param status                      lifecycle state.
- * @param openedAt                    when the account was opened.
- * @param lastEventOccurredAt         when the most recent event was recorded.
+ * @param openedAt                    when the account was opened (immutable
+ *                                    after the bootstrap event).
+ * @param lastEventOccurredAt         when the most recent event was recorded;
+ *                                    advances with every event.
  */
 public record Account(
     AccountId id,
@@ -37,12 +47,12 @@ public record Account(
 
     /** Compact constructor enforcing non-null fields and a non-negative overdraft limit. */
     public Account {
-        Objects.requireNonNull(id);
-        Objects.requireNonNull(customerId);
-        Objects.requireNonNull(currency);
-        Objects.requireNonNull(status);
-        Objects.requireNonNull(openedAt);
-        Objects.requireNonNull(lastEventOccurredAt);
+        Objects.requireNonNull(id, "id");
+        Objects.requireNonNull(customerId, "customerId");
+        Objects.requireNonNull(currency, "currency");
+        Objects.requireNonNull(status, "status");
+        Objects.requireNonNull(openedAt, "openedAt");
+        Objects.requireNonNull(lastEventOccurredAt, "lastEventOccurredAt");
         if (overdraftLimitMinorUnits < 0) {
             throw new IllegalArgumentException("overdraftLimitMinorUnits must be >= 0");
         }
@@ -103,11 +113,26 @@ public record Account(
      * <p>The CLOSED guard fires before the switch so it uniformly rejects every
      * event type once the account has reached terminal state.
      *
+     * <p>This method is intentionally {@code public} (in contrast to the
+     * private {@code open} bootstrap) so callers — most importantly the
+     * application-layer projection cache — can incrementally apply a freshly
+     * persisted event to a cached aggregate without replaying the full
+     * event stream.
+     *
+     * <p>No overdraft-limit check is performed here. The projection trusts
+     * that the event was already validated by the command handler before
+     * being persisted; balances may legitimately be negative as a result of
+     * a recorded withdrawal that the command handler authorised against the
+     * permitted overdraft cap.
+     *
      * @param event the next event in this account's stream.
      * @return projected state after the event.
      * @throws IllegalStateException if the account is already {@link AccountStatus#CLOSED},
      *                               or if an {@link AccountEvent.AccountOpened} is applied
      *                               to an already-open account (would open it twice).
+     * @throws ArithmeticException   if a {@link AccountEvent.MoneyDeposited} or
+     *                               {@link AccountEvent.MoneyWithdrawn} would
+     *                               overflow {@code long} balance arithmetic.
      */
     public Account apply(AccountEvent event) {
         if (status == AccountStatus.CLOSED) {
