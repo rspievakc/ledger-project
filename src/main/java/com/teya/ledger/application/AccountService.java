@@ -3,6 +3,7 @@ package com.teya.ledger.application;
 import com.teya.ledger.domain.account.Account;
 import com.teya.ledger.domain.account.AccountEvent;
 import com.teya.ledger.domain.account.AccountId;
+import com.teya.ledger.domain.account.AccountStatus;
 import com.teya.ledger.domain.customer.CustomerId;
 import com.teya.ledger.domain.error.AccountClosedException;
 import com.teya.ledger.domain.error.AccountNotEmptyException;
@@ -59,10 +60,10 @@ public class AccountService {
         try {
             eventStore.append(streamId(accountId), List.of(mapper.toRecord(opened)));
             cache.apply(accountId, opened);
+            return cache.load(accountId).orElseThrow();
         } finally {
             lock.unlock();
         }
-        return cache.load(accountId).orElseThrow();
     }
 
     /**
@@ -118,7 +119,7 @@ public class AccountService {
      * Called by {@link #changeOverdraft} and {@link #close} before any mutation.
      */
     private static void requireOpen(Account account) {
-        if (account.status() != com.teya.ledger.domain.account.AccountStatus.OPEN) {
+        if (account.status() != AccountStatus.OPEN) {
             throw new AccountClosedException(account.id());
         }
     }
