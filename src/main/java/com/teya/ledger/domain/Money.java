@@ -28,7 +28,9 @@ public record Money(long minorUnits, Currency currency) implements Comparable<Mo
     }
 
     /**
-     * Returns a zero-valued {@link Money} in the given currency.
+     * Returns a zero-valued {@link Money} in the given currency. Useful as
+     * the identity element when folding a stream of {@link Money} values
+     * (e.g., summing the deposits in an account history).
      *
      * @param currency the ISO currency.
      * @return {@code Money(0, currency)}.
@@ -67,6 +69,8 @@ public record Money(long minorUnits, Currency currency) implements Comparable<Mo
      * Returns the additive inverse.
      *
      * @return new {@link Money} with negated minor units.
+     * @throws ArithmeticException if {@code minorUnits == Long.MIN_VALUE}
+     *                             (the only value whose negation overflows {@code long}).
      */
     public Money negate() {
         return new Money(Math.negateExact(this.minorUnits), currency);
@@ -86,6 +90,7 @@ public record Money(long minorUnits, Currency currency) implements Comparable<Mo
     }
 
     private void requireSameCurrency(Money other) {
+        Objects.requireNonNull(other, "other must not be null");
         if (!this.currency.equals(other.currency)) {
             throw new IllegalArgumentException(
                 "currency mismatch: " + this.currency.getCurrencyCode()

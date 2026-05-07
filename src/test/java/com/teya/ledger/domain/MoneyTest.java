@@ -61,7 +61,9 @@ class MoneyTest {
         Money gbp = new Money(100L, GBP);
         Money eur = new Money(100L, EUR);
         assertThatThrownBy(() -> gbp.minus(eur))
-            .isInstanceOf(IllegalArgumentException.class);
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("GBP")
+            .hasMessageContaining("EUR");
     }
 
     @Test
@@ -78,7 +80,9 @@ class MoneyTest {
         Money gbp = new Money(100L, GBP);
         Money eur = new Money(100L, EUR);
         assertThatThrownBy(() -> gbp.compareTo(eur))
-            .isInstanceOf(IllegalArgumentException.class);
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("GBP")
+            .hasMessageContaining("EUR");
     }
 
     @Test
@@ -100,5 +104,36 @@ class MoneyTest {
         Money gbp100 = new Money(100L, GBP);
         Money eur100 = new Money(100L, EUR);
         assertThat(gbp100).isNotEqualTo(eur100);
+    }
+
+    @Test
+    void negate_rejects_min_value_overflow() {
+        Money min = new Money(Long.MIN_VALUE, GBP);
+        assertThatThrownBy(min::negate)
+            .isInstanceOf(ArithmeticException.class);
+    }
+
+    @Test
+    void plus_rejects_null() {
+        Money m = new Money(100L, GBP);
+        assertThatThrownBy(() -> m.plus(null))
+            .isInstanceOf(NullPointerException.class)
+            .hasMessageContaining("other");
+    }
+
+    @Test
+    void minus_rejects_null() {
+        Money m = new Money(100L, GBP);
+        assertThatThrownBy(() -> m.minus(null))
+            .isInstanceOf(NullPointerException.class)
+            .hasMessageContaining("other");
+    }
+
+    @Test
+    void compare_to_rejects_null() {
+        Money m = new Money(100L, GBP);
+        assertThatThrownBy(() -> m.compareTo(null))
+            .isInstanceOf(NullPointerException.class)
+            .hasMessageContaining("other");
     }
 }
