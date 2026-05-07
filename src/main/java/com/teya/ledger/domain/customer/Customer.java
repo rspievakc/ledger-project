@@ -42,7 +42,8 @@ public record Customer(CustomerId id, String name, Instant createdAt) {
         for (CustomerEvent event : events) {
             current = apply(current, event);
         }
-        return current;
+        return Objects.requireNonNull(current,
+            "apply returned null while folding customer event stream");
     }
 
     private static Customer apply(Customer current, CustomerEvent event) {

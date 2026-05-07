@@ -1043,13 +1043,22 @@ class CustomerTest {
             .hasMessageContaining("no events");
     }
 
+    /**
+     * The Customer.apply switch is exhaustive over the sealed CustomerEvent
+     * hierarchy. As long as CustomerCreated is the only permitted variant,
+     * there is no way to "fold a non-CustomerCreated as the first event" —
+     * the type system refuses to construct one. This test fails if a new
+     * variant is added, which is the right pressure: whoever extends
+     * CustomerEvent must come back here and decide whether the new variant
+     * is allowed as a first event or whether the fold needs an additional
+     * guard.
+     */
     @Test
-    void fold_rejects_first_event_other_than_created() {
-        // No second event type exists yet; this is a guard for future evolution.
-        // Synthesise via a non-CustomerCreated subtype is not possible because
-        // the hierarchy is sealed; we instead assert the empty-list guard above
-        // is exhaustive for now. Documenting intent.
-        assertThat(true).isTrue();
+    void sealed_hierarchy_has_only_one_variant_so_first_event_check_is_unnecessary() {
+        assertThat(CustomerEvent.class.getPermittedSubclasses())
+            .as("CustomerEvent permitted subtypes — extending requires "
+                + "revisiting Customer.foldFrom and this test")
+            .containsExactly(CustomerEvent.CustomerCreated.class);
     }
 }
 ```
