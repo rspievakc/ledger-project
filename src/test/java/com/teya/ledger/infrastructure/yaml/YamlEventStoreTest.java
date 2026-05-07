@@ -42,6 +42,9 @@ class YamlEventStoreTest {
             new EventRecord(0L, eventId, "MoneyDeposited", ts, payload)
         ));
         assertThat(appended.firstSeq()).isEqualTo(1L);
+        assertThat(appended.lastSeq()).isEqualTo(1L);
+        assertThat(appended.records()).hasSize(1);
+        assertThat(appended.records().get(0).seq()).isEqualTo(1L);
 
         List<EventRecord> read = store.readFrom("account-9b1f", 0L, 10);
         assertThat(read).hasSize(1);
@@ -98,6 +101,24 @@ class YamlEventStoreTest {
         store.append("account-b", List.of(rec("E1")));
         assertThat(tempDir.resolve("account-a.yaml")).exists();
         assertThat(tempDir.resolve("account-b.yaml")).exists();
+    }
+
+    @Test
+    void read_rejects_non_positive_limit() {
+        assertThatThrownBy(() -> store.readFrom("s", 0L, 0))
+            .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void read_rejects_negative_after() {
+        assertThatThrownBy(() -> store.readFrom("s", -1L, 10))
+            .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void read_from_after_seq_beyond_end_returns_empty() {
+        store.append("s", List.of(rec("E1"), rec("E2"), rec("E3")));
+        assertThat(store.readFrom("s", 10L, 100)).isEmpty();
     }
 
     private EventRecord rec(String type) {
