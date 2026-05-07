@@ -88,6 +88,12 @@ class InMemoryEventStoreTest {
             .isInstanceOf(IllegalArgumentException.class);
     }
 
+    @Test
+    void read_from_after_seq_beyond_end_returns_empty() {
+        store.append("s1", List.of(unseq("E1"), unseq("E2"), unseq("E3")));
+        assertThat(store.readFrom("s1", 10L, 100)).isEmpty();
+    }
+
     private EventRecord unseq(String type) {
         return EventRecord.unsequenced(
             UUID.randomUUID(), type, Instant.now(), Map.of("dummy", true));
