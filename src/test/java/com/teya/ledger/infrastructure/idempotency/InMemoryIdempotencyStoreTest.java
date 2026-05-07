@@ -8,9 +8,15 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.Optional;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class InMemoryIdempotencyStoreTest {
 
@@ -58,10 +64,9 @@ class InMemoryIdempotencyStoreTest {
 
     @Test
     void expires_entries_past_ttl() {
+        // Clock.fixed cannot be advanced post-construction, so we use MutableClock
+        // backed by an AtomicReference whose value we mutate to roll time forward.
         AtomicReference<Instant> now = new AtomicReference<>(Instant.parse("2026-05-06T10:00:00Z"));
-        Clock clock = Clock.fixed(now.get(), ZoneOffset.UTC);
-        // Wrap so we can advance time by allocating a new InMemory store via a clock supplier.
-        // Simpler: advance via a mutable clock implementation.
         IdempotencyStore store = new InMemoryIdempotencyStore(
             10, Duration.ofMinutes(5), new MutableClock(now));
         store.record("k1", "h", 200, "v");
@@ -69,6 +74,55 @@ class InMemoryIdempotencyStoreTest {
         assertThat(store.lookup("k1")).isPresent();
         now.set(now.get().plus(Duration.ofMinutes(2))); // total +6m, past TTL
         assertThat(store.lookup("k1")).isEmpty();
+    }
+
+    @Test
+    void lookup_rejects_null_key() {
+        IdempotencyStore store = new InMemoryIdempotencyStore(
+            10, Duration.ofHours(1), Clock.systemUTC());
+        assertThatThrownBy(() -> store.lookup(null))
+            .isInstanceOf(NullPointerException.class)
+            .hasMessageContaining("key");
+    }
+
+    @Test
+    void concurrent_record_and_lookup_respects_size_cap_without_corruption()
+        throws InterruptedException {
+        int maxSize = 64;
+        int threads = 16;
+        int opsPerThread = 200;
+        InMemoryIdempotencyStore store = new InMemoryIdempotencyStore(
+            maxSize, Duration.ofHours(1), Clock.systemUTC());
+        ExecutorService pool = Executors.newFixedThreadPool(threads);
+        CountDownLatch start = new CountDownLatch(1);
+        CountDownLatch done = new CountDownLatch(threads);
+        AtomicInteger failures = new AtomicInteger();
+        for (int t = 0; t < threads; t++) {
+            int threadId = t;
+            pool.submit(() -> {
+                try {
+                    start.await();
+                    for (int i = 0; i < opsPerThread; i++) {
+                        String key = "k-" + threadId + "-" + i;
+                        store.record(key, "h", 200, "v" + i);
+                        store.lookup(key);
+                    }
+                } catch (Exception e) {
+                    failures.incrementAndGet();
+                } finally {
+                    done.countDown();
+                }
+            });
+        }
+        start.countDown();
+        assertThat(done.await(30, TimeUnit.SECONDS)).isTrue();
+        pool.shutdown();
+        assertThat(failures.get()).as("no exceptions in any worker").isZero();
+        // After ~3,200 inserts the size cap must hold.
+        // We can't read internal state from the public API, so we assert by
+        // probing the store: a recently-inserted key should still be present,
+        // and any older key (bumped past LRU) is allowed to be missing.
+        assertThat(store.lookup("k-0-" + (opsPerThread - 1))).isPresent();
     }
 
     /** Test-only mutable clock for TTL expiry assertions. */

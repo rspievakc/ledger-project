@@ -15,8 +15,11 @@ import java.util.Optional;
  * Bounded LRU + TTL implementation of {@link IdempotencyStore}.
  *
  * <p>Entries past {@code ttl} are removed lazily on lookup and
- * eagerly when the size cap is breached. Synchronised for simplicity;
- * traffic on this store is one access per write request.
+ * eagerly via a full O(n) sweep before each record. Synchronised for
+ * simplicity; traffic on this store is at most one access per write
+ * request, and {@code maxSize} is expected to be small (low thousands)
+ * — see {@code ledger.idempotency.cache-size} in {@code application.yaml}.
+ * Both choices keep the lock window cheap.
  */
 public final class InMemoryIdempotencyStore implements IdempotencyStore {
 
@@ -46,12 +49,13 @@ public final class InMemoryIdempotencyStore implements IdempotencyStore {
     }
 
     /**
-     * Returns the cached entry for {@code key}, or empty if not found or expired.
+     * {@inheritDoc}
      *
      * <p>An expired entry is removed from the store on this call (lazy eviction).
      */
     @Override
     public synchronized Optional<Entry> lookup(String key) {
+        Objects.requireNonNull(key, "key");
         Stored s = entries.get(key);
         if (s == null) {
             return Optional.empty();
@@ -64,11 +68,18 @@ public final class InMemoryIdempotencyStore implements IdempotencyStore {
     }
 
     /**
-     * Records a response under {@code key}, overwriting any previous entry.
+     * {@inheritDoc}
      *
-     * <p>Expired entries are purged eagerly before insertion. If the store
-     * still exceeds {@code maxSize} after purging, the least-recently-used
-     * entry is evicted until the size constraint is satisfied.
+     * <p>Overwrites any previous entry for the same key — including resetting
+     * the TTL clock — and purges expired entries eagerly before insertion.
+     * If the store still exceeds {@code maxSize} after purging, the
+     * least-recently-used entry is evicted until the size constraint is
+     * satisfied.
+     *
+     * <p>The HTTP idempotency interceptor (Task 5.1) is expected to call
+     * {@link #lookup} first; reaching {@code record} for a key that already
+     * has a live entry should be unusual in normal traffic. The overwrite
+     * semantics here are a defensive fallback rather than the primary path.
      */
     @Override
     public synchronized void record(String key, String requestHash,
@@ -105,6 +116,10 @@ public final class InMemoryIdempotencyStore implements IdempotencyStore {
     /**
      * Internal storage record holding the cached response and its recording timestamp.
      *
+     * <p>Distinct from the public {@link Entry} type so {@code recordedAt} —
+     * which is internal TTL bookkeeping — never escapes the cache boundary
+     * to the HTTP layer. {@link #toEntry()} performs the projection.
+     *
      * @param requestHash    SHA-256 of the original request.
      * @param responseStatus HTTP status code of the original response.
      * @param responseBody   serialised body of the original response.
@@ -112,7 +127,7 @@ public final class InMemoryIdempotencyStore implements IdempotencyStore {
      */
     private record Stored(String requestHash, int responseStatus,
                           String responseBody, Instant recordedAt) {
-        /** Converts this internal record to the public {@link Entry} type. */
+        /** Projects this internal record to the public {@link Entry} type. */
         Entry toEntry() {
             return new Entry(requestHash, responseStatus, responseBody);
         }
