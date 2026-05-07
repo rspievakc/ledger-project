@@ -101,6 +101,15 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(code.status()).body(body);
     }
 
+    @ExceptionHandler(IdempotencyKeyConflictException.class)
+    public ResponseEntity<ErrorResponse> idempotencyKeyConflict(IdempotencyKeyConflictException ex) {
+        ErrorCode code = ErrorCode.IDEMPOTENCY_KEY_REUSED_WITH_DIFFERENT_REQUEST;
+        ErrorResponse body = new ErrorResponse(
+            code.name(), ex.getMessage(), java.util.Map.of(),
+            MDC.get(RequestIdFilter.MDC_KEY));
+        return ResponseEntity.status(code.status()).body(body);
+    }
+
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ErrorResponse> uncaught(Exception ex) {
         log.error("uncaught exception", ex);
