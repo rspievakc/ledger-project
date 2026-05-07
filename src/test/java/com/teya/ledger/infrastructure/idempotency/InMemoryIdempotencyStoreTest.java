@@ -118,11 +118,12 @@ class InMemoryIdempotencyStoreTest {
         assertThat(done.await(30, TimeUnit.SECONDS)).isTrue();
         pool.shutdown();
         assertThat(failures.get()).as("no exceptions in any worker").isZero();
-        // After ~3,200 inserts the size cap must hold.
-        // We can't read internal state from the public API, so we assert by
-        // probing the store: a recently-inserted key should still be present,
-        // and any older key (bumped past LRU) is allowed to be missing.
-        assertThat(store.lookup("k-0-" + (opsPerThread - 1))).isPresent();
+        // After ~3,200 inserts into a 64-slot LRU, any specific previously-
+        // inserted key may have been evicted; we cannot deterministically
+        // assert presence on a key from the concurrent phase. Instead, prove
+        // the store is still functional with a post-hoc sequential probe.
+        store.record("post-hoc", "h", 200, "v");
+        assertThat(store.lookup("post-hoc")).isPresent();
     }
 
     /** Test-only mutable clock for TTL expiry assertions. */
