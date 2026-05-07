@@ -98,11 +98,6 @@ public class AccountService {
         ReentrantLock lock = locks.lockFor(accountId);
         lock.lock();
         try {
-            // Invalidate the cache before loading so we always see the
-            // latest balance from the event store — critical for the
-            // zero-balance guard below when external writers (e.g. a
-            // DepositService) may have appended events since the last load.
-            cache.invalidate(accountId);
             Account current = find(accountId);
             requireOpen(current);
             if (current.balanceMinorUnits() != 0L) {

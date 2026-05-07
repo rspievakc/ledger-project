@@ -31,13 +31,14 @@ class AccountServiceTest {
     private AccountService accounts;
     private EventStore store;
     private EventEnvelopeMapper mapper;
+    private ProjectionCache cache;
 
     @BeforeEach
     void setUp() {
         store = new InMemoryEventStore();
         mapper = new EventEnvelopeMapper();
         customers = new CustomerService(store, mapper, clock);
-        ProjectionCache cache = new ProjectionCache(store, mapper);
+        cache = new ProjectionCache(store, mapper);
         accounts = new AccountService(store, mapper, cache, new LockRegistry(), customers, clock);
     }
 
@@ -106,8 +107,12 @@ class AccountServiceTest {
         store.append("account-" + opened.id(), List.of(
             mapper.toRecord(new AccountEvent.MoneyDeposited(
                 opened.id(), 1L, GBP, now.plusSeconds(1), "k"))));
-        // Bypass the cache so close re-reads.
-        new ProjectionCache(store, mapper).invalidate(opened.id());
+        // Invalidate the AccountService's cache so close()'s find() re-reads
+        // from the store. In production this isn't needed because every
+        // writer holds the per-account LockRegistry lock and updates the
+        // shared cache via cache.apply; the bypass-store-append above is
+        // a test-only shortcut while DepositService doesn't exist yet.
+        cache.invalidate(opened.id());
         assertThatThrownBy(() -> accounts.close(opened.id()))
             .isInstanceOf(AccountNotEmptyException.class);
     }
