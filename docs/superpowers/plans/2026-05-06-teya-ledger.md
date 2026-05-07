@@ -4791,57 +4791,46 @@ public class TransactionQueryService {
             throw new IllegalArgumentException("limit must be in [1," + MAX_LIMIT + "]");
         }
         String streamId = AccountService.streamId(accountId);
-        List<TransactionPage.Item> items = new ArrayList<>(limit);
+        // Collect up to limit + 1 money items: the extra (if found) signals
+        // "another money event exists after this page" and becomes nextCursor;
+        // we drop it from the returned items. Lifecycle events are skipped
+        // silently and don't count toward limit. Read in chunks of limit+1
+        // so the round-trip count stays bounded even with many interleaved
+        // lifecycle events.
+        List<TransactionPage.Item> items = new ArrayList<>(limit + 1);
         long cursor = afterSeq;
-        boolean more = false;
-        Long lastSeq = null;
-        // Read limit + 1 to determine whether more events exist after this page.
-        while (items.size() < limit) {
-            int needed = (limit - items.size()) + 1;
-            List<EventRecord> page = eventStore.readFrom(streamId, cursor, needed);
+        int chunkSize = limit + 1;
+        while (items.size() < limit + 1) {
+            List<EventRecord> page = eventStore.readFrom(streamId, cursor, chunkSize);
             if (page.isEmpty()) break;
             for (EventRecord rec : page) {
                 cursor = rec.seq();
-                AccountEvent ev = mapper.toAccountEvent(rec);
-                TransactionPage.Item item = toItem(ev);
+                TransactionPage.Item item = toItem(mapper.toAccountEvent(rec), rec.seq());
                 if (item == null) continue;
-                if (items.size() == limit) {
-                    more = true;
-                    break;
-                }
                 items.add(item);
-                lastSeq = rec.seq();
+                if (items.size() == limit + 1) break;
             }
-            if (more || page.size() < needed) break;
+            if (items.size() == limit + 1) break;
+            if (page.size() < chunkSize) break;
         }
-        Long nextCursor = (more && lastSeq != null) ? lastSeq : null;
+        boolean more = items.size() > limit;
+        if (more) {
+            items.remove(items.size() - 1);
+        }
+        Long nextCursor = more ? items.get(items.size() - 1).seq() : null;
         return new TransactionPage(List.copyOf(items), nextCursor);
     }
 
-    private static TransactionPage.Item toItem(AccountEvent event) {
+    private static TransactionPage.Item toItem(AccountEvent event, long seq) {
         return switch (event) {
             case AccountEvent.MoneyDeposited e -> new TransactionPage.Item(
-                0L, "MoneyDeposited", e.amountMinorUnits(), e.currency(), e.occurredAt());
+                seq, "MoneyDeposited", e.amountMinorUnits(), e.currency(), e.occurredAt());
             case AccountEvent.MoneyWithdrawn e -> new TransactionPage.Item(
-                0L, "MoneyWithdrawn", e.amountMinorUnits(), e.currency(), e.occurredAt());
+                seq, "MoneyWithdrawn", e.amountMinorUnits(), e.currency(), e.occurredAt());
             default -> null;
         };
     }
 }
-```
-
-> Note: the `seq` on each item is set as the loop walks; the
-> implementation above reuses the per-record seq in the
-> `items.add(item)` call by re-instantiating with the seq when the
-> mapper returns. Update `TransactionQueryService.history` to populate
-> the `seq` field from `rec.seq()` when constructing the item:
-
-Replace the inner-loop `items.add(item)` block with:
-
-```java
-items.add(new TransactionPage.Item(
-    rec.seq(), item.type(), item.amountMinorUnits(),
-    item.currency(), item.occurredAt()));
 ```
 
 - [ ] **Step 5: Run, verify pass**
