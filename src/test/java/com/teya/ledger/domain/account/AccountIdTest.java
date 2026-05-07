@@ -39,4 +39,19 @@ class AccountIdTest {
         UUID uuid = UUID.randomUUID();
         assertThat(new AccountId(uuid)).hasToString(uuid.toString());
     }
+
+    @Test
+    void of_rejects_null_string() {
+        assertThatThrownBy(() -> AccountId.of(null))
+            .isInstanceOf(NullPointerException.class)
+            .hasMessageContaining("raw");
+    }
+
+    @Test
+    void of_rejects_malformed_string_with_domain_message() {
+        assertThatThrownBy(() -> AccountId.of("not-a-uuid"))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("AccountId")
+            .hasMessageContaining("not-a-uuid");
+    }
 }

@@ -39,4 +39,19 @@ class CustomerIdTest {
         UUID uuid = UUID.randomUUID();
         assertThat(new CustomerId(uuid)).hasToString(uuid.toString());
     }
+
+    @Test
+    void of_rejects_null_string() {
+        assertThatThrownBy(() -> CustomerId.of(null))
+            .isInstanceOf(NullPointerException.class)
+            .hasMessageContaining("raw");
+    }
+
+    @Test
+    void of_rejects_malformed_string_with_domain_message() {
+        assertThatThrownBy(() -> CustomerId.of("not-a-uuid"))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("CustomerId")
+            .hasMessageContaining("not-a-uuid");
+    }
 }
