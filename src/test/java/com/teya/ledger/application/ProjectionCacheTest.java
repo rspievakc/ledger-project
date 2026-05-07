@@ -14,6 +14,11 @@ import java.time.Instant;
 import java.util.Currency;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -68,9 +73,64 @@ class ProjectionCacheTest {
         cache.load(accountId);
         AccountEvent.MoneyDeposited deposit = new AccountEvent.MoneyDeposited(
             accountId, 250L, GBP, t0.plusSeconds(1), "k1");
+        // Append precedes apply in the production command-handler order;
+        // testing that order here also keeps the test honest if anyone ever
+        // makes apply()'s prior-null fallback the only path that reaches a
+        // production state.
+        store.append(streamId(), List.of(mapper.toRecord(deposit)));
         cache.apply(accountId, deposit);
         Account updated = cache.load(accountId).orElseThrow();
         assertThat(updated.balanceMinorUnits()).isEqualTo(250L);
+    }
+
+    @Test
+    void apply_after_invalidate_rebuilds_from_store() {
+        // Exercises the prior-null fallback inside apply()'s compute lambda:
+        // invalidate between load and apply, simulating a read-only query
+        // that flushed the cache while a write was in flight.
+        appendOpened();
+        cache.load(accountId);
+        AccountEvent.MoneyDeposited deposit = new AccountEvent.MoneyDeposited(
+            accountId, 350L, GBP, t0.plusSeconds(1), "k1");
+        store.append(streamId(), List.of(mapper.toRecord(deposit)));
+        cache.invalidate(accountId);
+        cache.apply(accountId, deposit);
+        Account updated = cache.load(accountId).orElseThrow();
+        assertThat(updated.balanceMinorUnits()).isEqualTo(350L);
+    }
+
+    @Test
+    void concurrent_apply_on_same_account_serialises_via_compute()
+        throws InterruptedException {
+        appendOpened();
+        cache.load(accountId);
+        int threads = 16;
+        long perDeposit = 10L;
+        ExecutorService pool = Executors.newFixedThreadPool(threads);
+        CountDownLatch start = new CountDownLatch(1);
+        CountDownLatch done = new CountDownLatch(threads);
+        AtomicInteger seq = new AtomicInteger();
+        for (int t = 0; t < threads; t++) {
+            pool.submit(() -> {
+                try {
+                    start.await();
+                    int n = seq.incrementAndGet();
+                    AccountEvent.MoneyDeposited d = new AccountEvent.MoneyDeposited(
+                        accountId, perDeposit, GBP, t0.plusSeconds(n), "k-" + n);
+                    store.append(streamId(), List.of(mapper.toRecord(d)));
+                    cache.apply(accountId, d);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                } finally {
+                    done.countDown();
+                }
+            });
+        }
+        start.countDown();
+        assertThat(done.await(10, TimeUnit.SECONDS)).isTrue();
+        pool.shutdown();
+        Account final_ = cache.load(accountId).orElseThrow();
+        assertThat(final_.balanceMinorUnits()).isEqualTo(threads * perDeposit);
     }
 
     @Test
