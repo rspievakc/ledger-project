@@ -22,9 +22,9 @@ class WithdrawalControllerIT {
     @Test
     void withdrawal_within_balance_succeeds() throws Exception {
         String accountId = TestSetup.openGbpAccount(mvc);
-        TestSetup.deposit(mvc, accountId, 1_000L, "k0");
+        TestSetup.deposit(mvc, accountId, 1_000L, TestSetup.key());
         mvc.perform(post("/account/" + accountId + "/withdrawal")
-                .header("Idempotency-Key", "w1")
+                .header("Idempotency-Key", TestSetup.key())
                 .contentType("application/json")
                 .content("{\"amountMinorUnits\":300,\"currency\":\"GBP\"}"))
             .andExpect(status().isCreated())
@@ -35,7 +35,7 @@ class WithdrawalControllerIT {
     void withdrawal_breaching_balance_returns_insufficient_funds() throws Exception {
         String accountId = TestSetup.openGbpAccount(mvc);
         mvc.perform(post("/account/" + accountId + "/withdrawal")
-                .header("Idempotency-Key", "w1")
+                .header("Idempotency-Key", TestSetup.key())
                 .contentType("application/json")
                 .content("{\"amountMinorUnits\":1,\"currency\":\"GBP\"}"))
             .andExpect(status().isUnprocessableEntity())

@@ -23,6 +23,7 @@ class CustomerControllerIT {
     @Test
     void create_returns_201_with_id_and_name() throws Exception {
         mvc.perform(post("/customer")
+                .header("Idempotency-Key", TestSetup.key())
                 .contentType("application/json")
                 .content("{\"name\":\"Alice\"}"))
             .andExpect(status().isCreated())
@@ -34,6 +35,7 @@ class CustomerControllerIT {
     @Test
     void create_rejects_blank_name() throws Exception {
         mvc.perform(post("/customer")
+                .header("Idempotency-Key", TestSetup.key())
                 .contentType("application/json")
                 .content("{\"name\":\"\"}"))
             .andExpect(status().isBadRequest())
@@ -50,6 +52,7 @@ class CustomerControllerIT {
     @Test
     void find_returns_the_customer_after_create() throws Exception {
         String body = mvc.perform(post("/customer")
+                .header("Idempotency-Key", TestSetup.key())
                 .contentType("application/json")
                 .content("{\"name\":\"Bob\"}"))
             .andReturn().getResponse().getContentAsString();

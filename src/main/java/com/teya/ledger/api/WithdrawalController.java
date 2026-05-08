@@ -2,7 +2,7 @@ package com.teya.ledger.api;
 
 import com.teya.ledger.api.dto.MoneyMovementRequest;
 import com.teya.ledger.api.dto.MoneyMovementResponse;
-import com.teya.ledger.api.error.IdempotencyKeyMissingException;
+import com.teya.ledger.api.idempotency.RequiresIdempotency;
 import com.teya.ledger.application.WithdrawalResult;
 import com.teya.ledger.application.WithdrawalService;
 import com.teya.ledger.domain.account.AccountId;
@@ -19,7 +19,8 @@ import java.util.Currency;
 
 /**
  * {@code POST /account/{accountId}/withdrawal}. Same idempotency-key
- * contract as {@link DepositController}.
+ * contract as {@link DepositController}, enforced by
+ * {@link com.teya.ledger.api.idempotency.IdempotencyInterceptor}.
  */
 @RestController
 public class WithdrawalController {
@@ -31,14 +32,12 @@ public class WithdrawalController {
     }
 
     @PostMapping("/account/{accountId}/withdrawal")
+    @RequiresIdempotency
     public ResponseEntity<MoneyMovementResponse> withdraw(
         @PathVariable("accountId") String accountId,
-        @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
+        @RequestHeader("Idempotency-Key") String idempotencyKey,
         @Valid @RequestBody MoneyMovementRequest req
     ) {
-        if (idempotencyKey == null || idempotencyKey.isBlank()) {
-            throw new IdempotencyKeyMissingException();
-        }
         WithdrawalResult result = withdrawals.withdraw(
             AccountId.of(accountId),
             req.amountMinorUnits(),

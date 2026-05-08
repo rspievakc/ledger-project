@@ -2,7 +2,7 @@ package com.teya.ledger.api;
 
 import com.teya.ledger.api.dto.MoneyMovementRequest;
 import com.teya.ledger.api.dto.MoneyMovementResponse;
-import com.teya.ledger.api.error.IdempotencyKeyMissingException;
+import com.teya.ledger.api.idempotency.RequiresIdempotency;
 import com.teya.ledger.application.DepositResult;
 import com.teya.ledger.application.DepositService;
 import com.teya.ledger.domain.account.AccountId;
@@ -18,10 +18,11 @@ import org.springframework.web.bind.annotation.RestController;
 import java.util.Currency;
 
 /**
- * {@code POST /account/{accountId}/deposit}. Requires an
- * {@code Idempotency-Key} header. The header check here is provisional;
- * Task 5.1 will move it into a shared interceptor that also caches
- * successful responses for replay.
+ * {@code POST /account/{accountId}/deposit}. The Idempotency-Key
+ * contract is enforced by {@link com.teya.ledger.api.idempotency.IdempotencyInterceptor}
+ * via the {@link RequiresIdempotency} annotation: missing/blank header
+ * → 400, replay with same body → cached response, replay with
+ * different body → 409.
  */
 @RestController
 public class DepositController {
@@ -33,14 +34,12 @@ public class DepositController {
     }
 
     @PostMapping("/account/{accountId}/deposit")
+    @RequiresIdempotency
     public ResponseEntity<MoneyMovementResponse> deposit(
         @PathVariable("accountId") String accountId,
-        @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
+        @RequestHeader("Idempotency-Key") String idempotencyKey,
         @Valid @RequestBody MoneyMovementRequest req
     ) {
-        if (idempotencyKey == null || idempotencyKey.isBlank()) {
-            throw new IdempotencyKeyMissingException();
-        }
         DepositResult result = deposits.deposit(
             AccountId.of(accountId),
             req.amountMinorUnits(),

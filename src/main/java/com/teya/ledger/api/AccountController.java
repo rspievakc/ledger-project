@@ -3,6 +3,7 @@ package com.teya.ledger.api;
 import com.teya.ledger.api.dto.AccountResponse;
 import com.teya.ledger.api.dto.ChangeOverdraftRequest;
 import com.teya.ledger.api.dto.OpenAccountRequest;
+import com.teya.ledger.api.idempotency.RequiresIdempotency;
 import com.teya.ledger.application.AccountService;
 import com.teya.ledger.domain.account.Account;
 import com.teya.ledger.domain.account.AccountId;
@@ -37,6 +38,7 @@ public class AccountController {
 
     /** Open a new account for the given customer. */
     @PostMapping("/customer/{customerId}/account")
+    @RequiresIdempotency
     public ResponseEntity<AccountResponse> open(
         @PathVariable("customerId") String customerId,
         @Valid @RequestBody OpenAccountRequest req
@@ -57,6 +59,7 @@ public class AccountController {
 
     /** Change an account's overdraft limit. */
     @PatchMapping("/account/{accountId}/overdraft-limit")
+    @RequiresIdempotency
     public AccountResponse changeOverdraft(
         @PathVariable("accountId") String accountId,
         @Valid @RequestBody ChangeOverdraftRequest req
@@ -67,6 +70,7 @@ public class AccountController {
 
     /** Close an account; refuses unless the balance is exactly zero. */
     @DeleteMapping("/account/{accountId}")
+    @RequiresIdempotency
     public AccountResponse close(@PathVariable("accountId") String accountId) {
         return AccountResponse.from(accounts.close(AccountId.of(accountId)));
     }

@@ -27,6 +27,7 @@ class AccountControllerIT {
     void open_then_get_returns_account_with_zero_balance() throws Exception {
         String customerId = createCustomer("Alice");
         MvcResult opened = mvc.perform(post("/customer/" + customerId + "/account")
+                .header("Idempotency-Key", TestSetup.key())
                 .contentType("application/json")
                 .content("{\"currency\":\"GBP\",\"overdraftLimitMinorUnits\":0}"))
             .andExpect(status().isCreated())
@@ -50,6 +51,7 @@ class AccountControllerIT {
     @Test
     void open_for_unknown_customer_returns_404() throws Exception {
         mvc.perform(post("/customer/" + java.util.UUID.randomUUID() + "/account")
+                .header("Idempotency-Key", TestSetup.key())
                 .contentType("application/json")
                 .content("{\"currency\":\"GBP\",\"overdraftLimitMinorUnits\":0}"))
             .andExpect(status().isNotFound())
@@ -60,6 +62,7 @@ class AccountControllerIT {
     void patch_overdraft_updates_limit() throws Exception {
         String accountId = newAccount("GBP", 0);
         mvc.perform(patch("/account/" + accountId + "/overdraft-limit")
+                .header("Idempotency-Key", TestSetup.key())
                 .contentType("application/json")
                 .content("{\"newLimitMinorUnits\":5000}"))
             .andExpect(status().isOk())
@@ -69,7 +72,8 @@ class AccountControllerIT {
     @Test
     void delete_succeeds_when_balance_is_zero() throws Exception {
         String accountId = newAccount("GBP", 0);
-        mvc.perform(delete("/account/" + accountId))
+        mvc.perform(delete("/account/" + accountId)
+                .header("Idempotency-Key", TestSetup.key()))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.status").value("CLOSED"));
     }
@@ -78,6 +82,7 @@ class AccountControllerIT {
     void open_rejects_invalid_currency_code() throws Exception {
         String customerId = createCustomer("X");
         mvc.perform(post("/customer/" + customerId + "/account")
+                .header("Idempotency-Key", TestSetup.key())
                 .contentType("application/json")
                 .content("{\"currency\":\"\",\"overdraftLimitMinorUnits\":0}"))
             .andExpect(status().isBadRequest())
@@ -87,6 +92,7 @@ class AccountControllerIT {
     private String createCustomer(String name) throws Exception {
         return extract(
             mvc.perform(post("/customer")
+                    .header("Idempotency-Key", TestSetup.key())
                     .contentType("application/json")
                     .content("{\"name\":\"" + name + "\"}"))
                 .andReturn().getResponse().getContentAsString(),
@@ -97,6 +103,7 @@ class AccountControllerIT {
         String customerId = createCustomer("U" + System.nanoTime());
         return extract(
             mvc.perform(post("/customer/" + customerId + "/account")
+                    .header("Idempotency-Key", TestSetup.key())
                     .contentType("application/json")
                     .content("{\"currency\":\"" + currency + "\",\"overdraftLimitMinorUnits\":" + overdraft + "}"))
                 .andReturn().getResponse().getContentAsString(),

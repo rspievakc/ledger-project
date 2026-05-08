@@ -23,7 +23,7 @@ class DepositControllerIT {
     void deposit_creates_event_and_returns_balance() throws Exception {
         String accountId = TestSetup.openGbpAccount(mvc);
         mvc.perform(post("/account/" + accountId + "/deposit")
-                .header("Idempotency-Key", "k1")
+                .header("Idempotency-Key", TestSetup.key())
                 .contentType("application/json")
                 .content("{\"amountMinorUnits\":500,\"currency\":\"GBP\"}"))
             .andExpect(status().isCreated())
@@ -46,7 +46,7 @@ class DepositControllerIT {
     void deposit_rejects_currency_mismatch() throws Exception {
         String accountId = TestSetup.openGbpAccount(mvc);
         mvc.perform(post("/account/" + accountId + "/deposit")
-                .header("Idempotency-Key", "k1")
+                .header("Idempotency-Key", TestSetup.key())
                 .contentType("application/json")
                 .content("{\"amountMinorUnits\":500,\"currency\":\"EUR\"}"))
             .andExpect(status().isUnprocessableEntity())
@@ -57,7 +57,7 @@ class DepositControllerIT {
     void deposit_rejects_zero_amount() throws Exception {
         String accountId = TestSetup.openGbpAccount(mvc);
         mvc.perform(post("/account/" + accountId + "/deposit")
-                .header("Idempotency-Key", "k1")
+                .header("Idempotency-Key", TestSetup.key())
                 .contentType("application/json")
                 .content("{\"amountMinorUnits\":0,\"currency\":\"GBP\"}"))
             .andExpect(status().isBadRequest())

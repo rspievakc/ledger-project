@@ -2,6 +2,7 @@ package com.teya.ledger.api;
 
 import com.teya.ledger.api.dto.CreateCustomerRequest;
 import com.teya.ledger.api.dto.CustomerResponse;
+import com.teya.ledger.api.idempotency.RequiresIdempotency;
 import com.teya.ledger.application.CustomerService;
 import com.teya.ledger.domain.customer.Customer;
 import com.teya.ledger.domain.customer.CustomerId;
@@ -33,6 +34,7 @@ public class CustomerController {
 
     /** Create a customer. Body: {@code {"name": "Alice"}}. */
     @PostMapping
+    @RequiresIdempotency
     public ResponseEntity<CustomerResponse> create(@Valid @RequestBody CreateCustomerRequest req) {
         Customer c = customers.create(req.name());
         return ResponseEntity.status(HttpStatus.CREATED).body(CustomerResponse.from(c));

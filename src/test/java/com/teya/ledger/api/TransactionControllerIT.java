@@ -33,7 +33,7 @@ class TransactionControllerIT {
     void cursor_pagination_walks_through_all_events() throws Exception {
         String accountId = TestSetup.openGbpAccount(mvc);
         for (int i = 0; i < 5; i++) {
-            TestSetup.deposit(mvc, accountId, 100L, "k" + i);
+            TestSetup.deposit(mvc, accountId, 100L, TestSetup.key());
         }
         MvcResult page1 = mvc.perform(get("/account/" + accountId + "/transaction")
                 .param("limit", "2"))
