@@ -1,0 +1,20 @@
+services:
+  ledger:
+    image: teya-ledger:1.0.0-SNAPSHOT
+    container_name: teya-ledger
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./data:/workspace/data
+    environment:
+      LEDGER_STORAGE_TYPE: yaml
+      LEDGER_STORAGE_YAML_DIRECTORY: /workspace/data/streams
+      LEDGER_IDEMPOTENCY_CACHE_SIZE: "10000"
+      LEDGER_IDEMPOTENCY_TTL: "PT24H"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O- http://localhost:8080/actuator/health | grep -q UP"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
