@@ -8,7 +8,6 @@ import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.stereotype.Component;
 import org.springframework.web.method.HandlerMethod;
 import org.springframework.web.servlet.HandlerInterceptor;
-import org.springframework.web.util.ContentCachingRequestWrapper;
 import org.springframework.web.util.ContentCachingResponseWrapper;
 import org.springframework.web.util.WebUtils;
 
@@ -31,7 +30,7 @@ import java.util.Optional;
  *       the {@link ContentCachingResponseWrapper} installed by {@link IdempotencyConfig.BodyCachingFilter}.</li>
  * </ol>
  *
- * <p>The interceptor cooperates with Spring's {@link ContentCachingRequestWrapper} and
+ * <p>The interceptor cooperates with {@link CachedBodyHttpServletRequest} and
  * {@link ContentCachingResponseWrapper}, both set up by
  * {@link IdempotencyConfig.BodyCachingFilter}, so the body is readable here without
  * consuming the controller's own read and without losing the response body that is
@@ -83,6 +82,11 @@ public class IdempotencyInterceptor implements HandlerInterceptor {
         String body = readBody(request);
         String hash = sha256(request.getMethod() + " " + request.getRequestURI() + " " + body);
 
+        // Race window: between this lookup and the record() in afterCompletion,
+        // two concurrent requests with the same key + body could both run their
+        // handlers. Acceptable for an in-memory single-process store at this
+        // scope; would require a different store contract (e.g., putIfAbsent)
+        // for a distributed deployment.
         Optional<IdempotencyStore.Entry> cached = store.lookup(key);
         if (cached.isPresent()) {
             if (!cached.get().requestHash().equals(hash)) {
@@ -149,16 +153,15 @@ public class IdempotencyInterceptor implements HandlerInterceptor {
     }
 
     /**
-     * Reads the request body using the {@link ContentCachingRequestWrapper} buffer
-     * when available, falling back to a direct stream read for test environments
-     * that bypass the filter chain.
+     * Reads the request body from the {@link CachedBodyHttpServletRequest} buffer
+     * installed by {@link IdempotencyConfig.BodyCachingFilter}. Falls back to a
+     * direct stream read for test environments that bypass the filter chain
+     * (the read is destructive, so such tests cannot exercise the replay path).
      */
     private static String readBody(HttpServletRequest request) throws java.io.IOException {
-        if (request instanceof ContentCachingRequestWrapper c) {
-            return new String(c.getContentAsByteArray(), StandardCharsets.UTF_8);
+        if (request instanceof CachedBodyHttpServletRequest c) {
+            return new String(c.getBody(), StandardCharsets.UTF_8);
         }
-        // Fallback for tests that don't wrap. Reads the stream destructively;
-        // tests that exercise replay must send through the filter chain.
         try (var in = request.getInputStream()) {
             return new String(in.readAllBytes(), StandardCharsets.UTF_8);
         }

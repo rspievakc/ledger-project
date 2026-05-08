@@ -10,7 +10,6 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.web.filter.OncePerRequestFilter;
 import org.springframework.web.servlet.config.annotation.InterceptorRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
-import org.springframework.web.util.ContentCachingRequestWrapper;
 import org.springframework.web.util.ContentCachingResponseWrapper;
 
 import java.io.IOException;
@@ -61,15 +60,19 @@ public class IdempotencyConfig implements WebMvcConfigurer {
 
     /**
      * Servlet filter that wraps each request and response so their bodies can
-     * be read after they have been consumed.
+     * be read by the idempotency interceptor without consuming them.
      *
-     * <p>The {@link ContentCachingRequestWrapper} buffers the request body so
-     * the interceptor and the controller can both read it.
+     * <p>The {@link CachedBodyHttpServletRequest} eagerly buffers the request
+     * body on construction so the interceptor can read it in {@code preHandle}
+     * and the controller can still read it normally — Spring's
+     * {@code ContentCachingRequestWrapper} doesn't work here because it's a
+     * read-through accumulator, so the interceptor would see an empty body
+     * (nothing has read the stream yet).
      *
-     * <p>The {@link ContentCachingResponseWrapper} captures bytes written by the
-     * controller. {@link ContentCachingResponseWrapper#copyBodyToResponse()} is
-     * called in a {@code finally} block to flush those captured bytes to the real
-     * response — without this call the client would receive an empty body.
+     * <p>The {@link ContentCachingResponseWrapper} captures bytes written by
+     * the controller. {@code copyBodyToResponse()} is called in a {@code finally}
+     * block to flush those captured bytes to the real response — without this
+     * call the client receives an empty body.
      */
     static final class BodyCachingFilter extends OncePerRequestFilter {
 
@@ -78,7 +81,7 @@ public class IdempotencyConfig implements WebMvcConfigurer {
                                         HttpServletResponse response,
                                         FilterChain chain)
                 throws ServletException, IOException {
-            ContentCachingRequestWrapper wrappedReq = new ContentCachingRequestWrapper(request);
+            CachedBodyHttpServletRequest wrappedReq = new CachedBodyHttpServletRequest(request);
             ContentCachingResponseWrapper wrappedResp = new ContentCachingResponseWrapper(response);
             try {
                 chain.doFilter(wrappedReq, wrappedResp);

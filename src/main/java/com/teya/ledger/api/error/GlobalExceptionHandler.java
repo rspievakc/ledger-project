@@ -105,7 +105,7 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ErrorResponse> idempotencyKeyConflict(IdempotencyKeyConflictException ex) {
         ErrorCode code = ErrorCode.IDEMPOTENCY_KEY_REUSED_WITH_DIFFERENT_REQUEST;
         ErrorResponse body = new ErrorResponse(
-            code.name(), ex.getMessage(), java.util.Map.of(),
+            code.name(), ex.getMessage(), Map.of(),
             MDC.get(RequestIdFilter.MDC_KEY));
         return ResponseEntity.status(code.status()).body(body);
     }
