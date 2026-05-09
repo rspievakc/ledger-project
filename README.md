@@ -22,6 +22,76 @@ docker compose up               # run the image with persistent volume
 open http://localhost:8080/swagger-ui.html
 ```
 
+## Usage
+
+End-to-end walk-through against a local server (`./gradlew bootRun`).
+Amounts are in **minor units** (pence, cents, …); writes need an
+`Idempotency-Key` header (any unique string per logical request — UUIDs
+are convenient).
+
+```bash
+BASE=http://localhost:8080
+
+# 1. Create a customer
+curl -sS -X POST "$BASE/customer" \
+  -H 'Content-Type: application/json' \
+  -H "Idempotency-Key: $(uuidgen)" \
+  -d '{"name":"Alice"}'
+# → 201 {"id":"<customerId>","name":"Alice","createdAt":"…"}
+
+# 2. Open a GBP account with a £100 overdraft
+CUSTOMER_ID=<paste id from step 1>
+curl -sS -X POST "$BASE/customer/$CUSTOMER_ID/account" \
+  -H 'Content-Type: application/json' \
+  -H "Idempotency-Key: $(uuidgen)" \
+  -d '{"currency":"GBP","overdraftLimitMinorUnits":10000}'
+# → 201 {"id":"<accountId>","customerId":"…","currency":"GBP",
+#        "overdraftLimitMinorUnits":10000,"status":"OPEN",
+#        "balanceMinorUnits":0}
+
+# 3. Deposit £50.00
+ACCOUNT_ID=<paste id from step 2>
+curl -sS -X POST "$BASE/account/$ACCOUNT_ID/deposit" \
+  -H 'Content-Type: application/json' \
+  -H "Idempotency-Key: $(uuidgen)" \
+  -d '{"amountMinorUnits":5000,"currency":"GBP"}'
+
+# 4. Withdraw £20.00
+curl -sS -X POST "$BASE/account/$ACCOUNT_ID/withdrawal" \
+  -H 'Content-Type: application/json' \
+  -H "Idempotency-Key: $(uuidgen)" \
+  -d '{"amountMinorUnits":2000,"currency":"GBP"}'
+
+# 5. Read current balance / state
+curl -sS "$BASE/account/$ACCOUNT_ID"
+# → 200 {... "balanceMinorUnits":3000 ...}
+
+# 6. Page through transactions (cursor = last seen seq)
+curl -sS "$BASE/account/$ACCOUNT_ID/transaction?after=0&limit=50"
+
+# 7. Raise the overdraft cap to £500
+curl -sS -X PATCH "$BASE/account/$ACCOUNT_ID/overdraft-limit" \
+  -H 'Content-Type: application/json' \
+  -H "Idempotency-Key: $(uuidgen)" \
+  -d '{"newLimitMinorUnits":50000}'
+
+# 8. Close the account (must zero the balance first; this will 422 otherwise)
+curl -sS -X POST "$BASE/account/$ACCOUNT_ID/withdrawal" \
+  -H 'Content-Type: application/json' \
+  -H "Idempotency-Key: $(uuidgen)" \
+  -d '{"amountMinorUnits":3000,"currency":"GBP"}'
+curl -sS -X DELETE "$BASE/account/$ACCOUNT_ID" \
+  -H "Idempotency-Key: $(uuidgen)"
+
+# 9. Look up the customer at any point
+curl -sS "$BASE/customer/$CUSTOMER_ID"
+```
+
+Replaying step 3 with the **same** `Idempotency-Key` returns the original
+response byte-for-byte. Replaying it with the same key but a different
+body returns `409 IDEMPOTENCY_KEY_REUSED_WITH_DIFFERENT_REQUEST` — see
+[Idempotency contract](#idempotency-contract).
+
 ## API surface
 
 URL nouns are deliberately **singular** (`/account`, `/customer`,
