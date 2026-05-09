@@ -46,6 +46,30 @@ tasks.named<JacocoReport>("jacocoTestReport") {
     }
 }
 
+tasks.jacocoTestCoverageVerification {
+    dependsOn(tasks.test)
+    violationRules {
+        rule {
+            element = "PACKAGE"
+            includes = listOf(
+                "com.teya.ledger.domain",
+                "com.teya.ledger.domain.account",
+                "com.teya.ledger.domain.customer",
+                "com.teya.ledger.domain.error",
+                "com.teya.ledger.application"
+            )
+            limit {
+                counter = "LINE"
+                minimum = "0.95".toBigDecimal()
+            }
+        }
+    }
+}
+
+tasks.named("check") {
+    dependsOn(tasks.jacocoTestCoverageVerification)
+}
+
 tasks.named<BootBuildImage>("bootBuildImage") {
     imageName.set("teya-ledger:${project.version}")
     builder.set("paketobuildpacks/builder-jammy-tiny")
