@@ -110,7 +110,17 @@ require an `Idempotency-Key` header.
 | `DELETE` | `/account/{id}` | Close (only if balance == 0) |
 | `GET` | `/account/{id}/transaction?after=&limit=` | Paginated history |
 
-Full schema served at `/swagger-ui.html` and `/v3/api-docs`.
+Full schema served at `/swagger-ui.html` and `/v3/api-docs` while the
+app is running. A checked-in copy lives at
+[`docs/openapi.yaml`](docs/openapi.yaml) and is browsable as a live
+Swagger-style UI here:
+
+> **[Browse the API (Redocly viewer) ↗](https://redocly.github.io/redoc/?url=https://raw.githubusercontent.com/rspievakc/ledger-project/main/docs/openapi.yaml)**
+
+Re-export with `./gradlew generateOpenApiDocs` — the
+[springdoc Gradle plugin](https://github.com/springdoc/springdoc-openapi-gradle-plugin)
+forks `bootRun`, fetches `/v3/api-docs.yaml`, and writes the spec back
+into `docs/`.
 
 ### Idempotency contract
 

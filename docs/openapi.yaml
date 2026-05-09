@@ -1,0 +1,497 @@
+openapi: 3.1.0
+info:
+  title: Teya Ledger API
+  description: "Event-sourced money ledger: customers, accounts, deposits, withdrawals,\
+    \ transaction history. All write endpoints require an Idempotency-Key header."
+  contact:
+    name: Teya
+  license:
+    name: MIT
+  version: 1.0.0
+servers:
+- url: http://localhost:8080
+  description: Generated server url
+tags:
+- name: Withdrawal
+  description: Withdraw money from an account
+- name: Deposit
+  description: Deposit money into an account
+- name: Customer
+  description: Customer creation and lookup
+- name: Account
+  description: "Account lifecycle: open, view, change overdraft, close"
+- name: Transaction
+  description: Read paginated money-movement history for an account
+paths:
+  /customer:
+    post:
+      tags:
+      - Customer
+      summary: Create a customer
+      description: Requires Idempotency-Key header.
+      operationId: create
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateCustomerRequest"
+        required: true
+      responses:
+        "201":
+          description: Customer created
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/CustomerResponse"
+        "400":
+          description: Missing Idempotency-Key or invalid body
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Idempotency-Key reused with a different body
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /customer/{customerId}/account:
+    post:
+      tags:
+      - Account
+      summary: Open a new account
+      description: Account starts at zero balance. Requires Idempotency-Key header.
+      operationId: open
+      parameters:
+      - name: customerId
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OpenAccountRequest"
+        required: true
+      responses:
+        "201":
+          description: Account opened
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/AccountResponse"
+        "400":
+          description: Missing Idempotency-Key or invalid body
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Unknown customerId
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /account/{accountId}/withdrawal:
+    post:
+      tags:
+      - Withdrawal
+      summary: Withdraw money from an account
+      description: Refused if the post-withdrawal balance would go below the configured
+        overdraft limit. Requires Idempotency-Key header.
+      operationId: withdraw
+      parameters:
+      - name: accountId
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: Idempotency-Key
+        in: header
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MoneyMovementRequest"
+        required: true
+      responses:
+        "201":
+          description: Withdrawal recorded
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/MoneyMovementResponse"
+        "400":
+          description: Missing Idempotency-Key or invalid body
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Unknown accountId
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Idempotency-Key reused with a different body
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "422":
+          description: "Insufficient funds, currency mismatch, invalid amount, or\
+            \ account closed"
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /account/{accountId}/deposit:
+    post:
+      tags:
+      - Deposit
+      summary: Deposit money into an account
+      description: Requires Idempotency-Key header.
+      operationId: deposit
+      parameters:
+      - name: accountId
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: Idempotency-Key
+        in: header
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MoneyMovementRequest"
+        required: true
+      responses:
+        "201":
+          description: Deposit recorded
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/MoneyMovementResponse"
+        "400":
+          description: Missing Idempotency-Key or invalid body
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Unknown accountId
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Idempotency-Key reused with a different body
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "422":
+          description: "Currency mismatch, invalid amount, or account closed"
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /account/{accountId}/overdraft-limit:
+    patch:
+      tags:
+      - Account
+      summary: Change overdraft limit
+      description: Requires Idempotency-Key header.
+      operationId: changeOverdraft
+      parameters:
+      - name: accountId
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChangeOverdraftRequest"
+        required: true
+      responses:
+        "200":
+          description: Overdraft updated
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/AccountResponse"
+        "404":
+          description: Unknown accountId
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "422":
+          description: Account is closed
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /customer/{customerId}:
+    get:
+      tags:
+      - Customer
+      summary: Look up a customer by id
+      operationId: find
+      parameters:
+      - name: customerId
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        "200":
+          description: Customer
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/CustomerResponse"
+        "404":
+          description: Unknown customerId
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /account/{accountId}:
+    get:
+      tags:
+      - Account
+      summary: Get the current state of an account
+      operationId: find_1
+      parameters:
+      - name: accountId
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        "200":
+          description: Account state
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/AccountResponse"
+        "404":
+          description: Unknown accountId
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    delete:
+      tags:
+      - Account
+      summary: Close an account
+      description: Refuses if balance is non-zero. Requires Idempotency-Key header.
+      operationId: close
+      parameters:
+      - name: accountId
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        "200":
+          description: Account closed
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/AccountResponse"
+        "404":
+          description: Unknown accountId
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "422":
+          description: Account balance is non-zero (ACCOUNT_NOT_EMPTY)
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /account/{accountId}/transaction:
+    get:
+      tags:
+      - Transaction
+      summary: List money-movement history for an account
+      description: "Cursor-paginated. nextCursor is null when no further records exist.\
+        \ Lifecycle events (account opened/closed, overdraft changed) are not surfaced\
+        \ here."
+      operationId: history
+      parameters:
+      - name: accountId
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: after
+        in: query
+        required: false
+        schema:
+          type: integer
+          format: int64
+          default: 0
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          format: int32
+          default: 50
+      responses:
+        "200":
+          description: Page of transactions
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/TransactionPageResponse"
+        "400":
+          description: "Invalid limit (must be in [1, 200])"
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+components:
+  schemas:
+    CreateCustomerRequest:
+      type: object
+      description: Body for POST /customer.
+      properties:
+        name:
+          type: string
+          description: "Customer display name. Required, 1–200 characters."
+          example: Alice
+          maxLength: 200
+          minLength: 0
+    ErrorResponse:
+      type: object
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+        details:
+          type: object
+          additionalProperties:
+            type: object
+        requestId:
+          type: string
+    CustomerResponse:
+      type: object
+      properties:
+        customerId:
+          type: string
+        name:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+    OpenAccountRequest:
+      type: object
+      description: "Body for POST /customer/{customerId}/account."
+      properties:
+        currency:
+          type: string
+          description: "ISO 4217 alpha currency code, fixed for the life of the account."
+          example: GBP
+          maxLength: 3
+          minLength: 3
+        overdraftLimitMinorUnits:
+          type: integer
+          format: int64
+          description: Permitted negative balance in minor units; >= 0.
+          example: 10000
+    AccountResponse:
+      type: object
+      properties:
+        accountId:
+          type: string
+        customerId:
+          type: string
+        currency:
+          type: string
+        overdraftLimitMinorUnits:
+          type: integer
+          format: int64
+        balanceMinorUnits:
+          type: integer
+          format: int64
+        status:
+          type: string
+    MoneyMovementRequest:
+      type: object
+      description: Body for deposit and withdrawal endpoints.
+      properties:
+        amountMinorUnits:
+          type: integer
+          format: int64
+          description: "Amount in the account's currency, in minor units (e.g., pence).\
+            \ Must be > 0."
+          example: 5000
+        currency:
+          type: string
+          description: ISO 4217 alpha currency code; must match the account's currency.
+          example: GBP
+          maxLength: 3
+          minLength: 3
+    MoneyMovementResponse:
+      type: object
+      properties:
+        eventId:
+          type: string
+        seq:
+          type: integer
+          format: int64
+        balanceAfterMinorUnits:
+          type: integer
+          format: int64
+    ChangeOverdraftRequest:
+      type: object
+      description: "Body for PATCH /account/{accountId}/overdraft-limit."
+      properties:
+        newLimitMinorUnits:
+          type: integer
+          format: int64
+          description: New overdraft cap in minor units; >= 0.
+          example: 50000
+    Item:
+      type: object
+      properties:
+        seq:
+          type: integer
+          format: int64
+        type:
+          type: string
+        amountMinorUnits:
+          type: integer
+          format: int64
+        currency:
+          type: string
+        occurredAt:
+          type: string
+          format: date-time
+    TransactionPageResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Item"
+        nextCursor:
+          type: integer
+          format: int64
