@@ -25,7 +25,7 @@ launch the wrapper.
 | **JDK** | 17 | Launches the Gradle wrapper. JDK 25 is auto-fetched via foojay for the build itself. |
 | **Docker Engine + Compose v2** | 24.0 | Only needed for `docker compose up`. |
 | **`jq`** | 1.6 | Pretty-prints responses and extracts ids in the [Usage](#usage) walk-through. |
-| **`curl`** | any | HTTP client in the walk-through. |
+| **`curl`** | 7.76 | HTTP client in the walk-through; `--fail-with-body` (added in 7.76) makes non-2xx responses non-zero while still printing the body. |
 | **`uuidgen`** | any | Generates per-request `Idempotency-Key` values in the walk-through. Ships with macOS and `util-linux`. |
 
 ## Storage
@@ -77,10 +77,13 @@ Amounts are in **minor units** (pence, cents, …); writes need an
 `Idempotency-Key` header (any unique string per logical request — UUIDs
 are convenient).
 
-The examples assume [`jq`](https://jqlang.org/) is on `$PATH`. Every
-response is piped through `jq .` for readable output, and steps 1–2
-capture the new resource's `id` into `CUSTOMER_ID` / `ACCOUNT_ID` so
-later steps chain on without manual copy-paste.
+The examples assume [`jq`](https://jqlang.org/) on `$PATH` and use
+`curl --fail-with-body` so a non-2xx response surfaces as a non-zero
+exit while still printing the body through `jq .` for inspection.
+Steps 1–2 capture the new resource's `id` into `CUSTOMER_ID` /
+`ACCOUNT_ID` and **gate the extraction on the curl exit code**, so an
+error envelope can't silently poison the variable used by later
+steps.
 
 ```bash
 BASE=http://localhost:8080
@@ -89,31 +92,31 @@ BASE=http://localhost:8080
 #### 1. Create a customer
 
 ```bash
-RESP=$(curl -sS -X POST "$BASE/customer" \
+RESP=$(curl -sS --fail-with-body -X POST "$BASE/customer" \
   -H 'Content-Type: application/json' \
   -H "Idempotency-Key: $(uuidgen)" \
-  -d '{"name":"Alice"}')
+  -d '{"name":"Alice"}') \
+  && CUSTOMER_ID=$(jq -r .id <<<"$RESP")
 echo "$RESP" | jq .
-CUSTOMER_ID=$(jq -r .id <<<"$RESP")
-echo "CUSTOMER_ID=$CUSTOMER_ID"
+echo "CUSTOMER_ID=${CUSTOMER_ID:-<curl failed>}"
 ```
 
 #### 2. Open a GBP account with a £100 overdraft
 
 ```bash
-RESP=$(curl -sS -X POST "$BASE/customer/$CUSTOMER_ID/account" \
+RESP=$(curl -sS --fail-with-body -X POST "$BASE/customer/$CUSTOMER_ID/account" \
   -H 'Content-Type: application/json' \
   -H "Idempotency-Key: $(uuidgen)" \
-  -d '{"currency":"GBP","overdraftLimitMinorUnits":10000}')
+  -d '{"currency":"GBP","overdraftLimitMinorUnits":10000}') \
+  && ACCOUNT_ID=$(jq -r .id <<<"$RESP")
 echo "$RESP" | jq .
-ACCOUNT_ID=$(jq -r .id <<<"$RESP")
-echo "ACCOUNT_ID=$ACCOUNT_ID"
+echo "ACCOUNT_ID=${ACCOUNT_ID:-<curl failed>}"
 ```
 
 #### 3. Deposit £50.00
 
 ```bash
-curl -sS -X POST "$BASE/account/$ACCOUNT_ID/deposit" \
+curl -sS --fail-with-body -X POST "$BASE/account/$ACCOUNT_ID/deposit" \
   -H 'Content-Type: application/json' \
   -H "Idempotency-Key: $(uuidgen)" \
   -d '{"amountMinorUnits":5000,"currency":"GBP"}' | jq .
@@ -122,7 +125,7 @@ curl -sS -X POST "$BASE/account/$ACCOUNT_ID/deposit" \
 #### 4. Withdraw £20.00
 
 ```bash
-curl -sS -X POST "$BASE/account/$ACCOUNT_ID/withdrawal" \
+curl -sS --fail-with-body -X POST "$BASE/account/$ACCOUNT_ID/withdrawal" \
   -H 'Content-Type: application/json' \
   -H "Idempotency-Key: $(uuidgen)" \
   -d '{"amountMinorUnits":2000,"currency":"GBP"}' | jq .
@@ -131,7 +134,7 @@ curl -sS -X POST "$BASE/account/$ACCOUNT_ID/withdrawal" \
 #### 5. Read current balance / state
 
 ```bash
-curl -sS "$BASE/account/$ACCOUNT_ID" | jq .
+curl -sS --fail-with-body "$BASE/account/$ACCOUNT_ID" | jq .
 ```
 
 #### 6. Page through transactions
@@ -139,13 +142,13 @@ curl -sS "$BASE/account/$ACCOUNT_ID" | jq .
 `after` is the cursor (last seen `seq`); `limit` is bounded to `[1, 200]`.
 
 ```bash
-curl -sS "$BASE/account/$ACCOUNT_ID/transaction?after=0&limit=50" | jq .
+curl -sS --fail-with-body "$BASE/account/$ACCOUNT_ID/transaction?after=0&limit=50" | jq .
 ```
 
 #### 7. Raise the overdraft cap to £500
 
 ```bash
-curl -sS -X PATCH "$BASE/account/$ACCOUNT_ID/overdraft-limit" \
+curl -sS --fail-with-body -X PATCH "$BASE/account/$ACCOUNT_ID/overdraft-limit" \
   -H 'Content-Type: application/json' \
   -H "Idempotency-Key: $(uuidgen)" \
   -d '{"newLimitMinorUnits":50000}' | jq .
@@ -156,18 +159,18 @@ curl -sS -X PATCH "$BASE/account/$ACCOUNT_ID/overdraft-limit" \
 The balance must be zero first — `DELETE` returns `422 ACCOUNT_NOT_EMPTY` otherwise.
 
 ```bash
-curl -sS -X POST "$BASE/account/$ACCOUNT_ID/withdrawal" \
+curl -sS --fail-with-body -X POST "$BASE/account/$ACCOUNT_ID/withdrawal" \
   -H 'Content-Type: application/json' \
   -H "Idempotency-Key: $(uuidgen)" \
   -d '{"amountMinorUnits":3000,"currency":"GBP"}' | jq .
-curl -sS -X DELETE "$BASE/account/$ACCOUNT_ID" \
+curl -sS --fail-with-body -X DELETE "$BASE/account/$ACCOUNT_ID" \
   -H "Idempotency-Key: $(uuidgen)" | jq .
 ```
 
 #### 9. Look up the customer at any point
 
 ```bash
-curl -sS "$BASE/customer/$CUSTOMER_ID" | jq .
+curl -sS --fail-with-body "$BASE/customer/$CUSTOMER_ID" | jq .
 ```
 
 Replaying step 3 with the **same** `Idempotency-Key` returns the original
