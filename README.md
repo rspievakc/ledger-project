@@ -77,8 +77,10 @@ Amounts are in **minor units** (pence, cents, …); writes need an
 `Idempotency-Key` header (any unique string per logical request — UUIDs
 are convenient).
 
-Set the base URL once; later steps reuse `CUSTOMER_ID` and `ACCOUNT_ID`
-(paste the `id` field from the previous response into each).
+The examples assume [`jq`](https://jqlang.org/) is on `$PATH`. Every
+response is piped through `jq .` for readable output, and steps 1–2
+capture the new resource's `id` into `CUSTOMER_ID` / `ACCOUNT_ID` so
+later steps chain on without manual copy-paste.
 
 ```bash
 BASE=http://localhost:8080
@@ -87,34 +89,34 @@ BASE=http://localhost:8080
 #### 1. Create a customer
 
 ```bash
-curl -sS -X POST "$BASE/customer" \
+RESP=$(curl -sS -X POST "$BASE/customer" \
   -H 'Content-Type: application/json' \
   -H "Idempotency-Key: $(uuidgen)" \
-  -d '{"name":"Alice"}'
-# → 201 {"id":"<customerId>","name":"Alice","createdAt":"…"}
+  -d '{"name":"Alice"}')
+echo "$RESP" | jq .
+CUSTOMER_ID=$(jq -r .id <<<"$RESP")
+echo "CUSTOMER_ID=$CUSTOMER_ID"
 ```
 
 #### 2. Open a GBP account with a £100 overdraft
 
 ```bash
-CUSTOMER_ID=<paste id from step 1>
-curl -sS -X POST "$BASE/customer/$CUSTOMER_ID/account" \
+RESP=$(curl -sS -X POST "$BASE/customer/$CUSTOMER_ID/account" \
   -H 'Content-Type: application/json' \
   -H "Idempotency-Key: $(uuidgen)" \
-  -d '{"currency":"GBP","overdraftLimitMinorUnits":10000}'
-# → 201 {"id":"<accountId>","customerId":"…","currency":"GBP",
-#        "overdraftLimitMinorUnits":10000,"status":"OPEN",
-#        "balanceMinorUnits":0}
+  -d '{"currency":"GBP","overdraftLimitMinorUnits":10000}')
+echo "$RESP" | jq .
+ACCOUNT_ID=$(jq -r .id <<<"$RESP")
+echo "ACCOUNT_ID=$ACCOUNT_ID"
 ```
 
 #### 3. Deposit £50.00
 
 ```bash
-ACCOUNT_ID=<paste id from step 2>
 curl -sS -X POST "$BASE/account/$ACCOUNT_ID/deposit" \
   -H 'Content-Type: application/json' \
   -H "Idempotency-Key: $(uuidgen)" \
-  -d '{"amountMinorUnits":5000,"currency":"GBP"}'
+  -d '{"amountMinorUnits":5000,"currency":"GBP"}' | jq .
 ```
 
 #### 4. Withdraw £20.00
@@ -123,14 +125,13 @@ curl -sS -X POST "$BASE/account/$ACCOUNT_ID/deposit" \
 curl -sS -X POST "$BASE/account/$ACCOUNT_ID/withdrawal" \
   -H 'Content-Type: application/json' \
   -H "Idempotency-Key: $(uuidgen)" \
-  -d '{"amountMinorUnits":2000,"currency":"GBP"}'
+  -d '{"amountMinorUnits":2000,"currency":"GBP"}' | jq .
 ```
 
 #### 5. Read current balance / state
 
 ```bash
-curl -sS "$BASE/account/$ACCOUNT_ID"
-# → 200 {... "balanceMinorUnits":3000 ...}
+curl -sS "$BASE/account/$ACCOUNT_ID" | jq .
 ```
 
 #### 6. Page through transactions
@@ -138,7 +139,7 @@ curl -sS "$BASE/account/$ACCOUNT_ID"
 `after` is the cursor (last seen `seq`); `limit` is bounded to `[1, 200]`.
 
 ```bash
-curl -sS "$BASE/account/$ACCOUNT_ID/transaction?after=0&limit=50"
+curl -sS "$BASE/account/$ACCOUNT_ID/transaction?after=0&limit=50" | jq .
 ```
 
 #### 7. Raise the overdraft cap to £500
@@ -147,7 +148,7 @@ curl -sS "$BASE/account/$ACCOUNT_ID/transaction?after=0&limit=50"
 curl -sS -X PATCH "$BASE/account/$ACCOUNT_ID/overdraft-limit" \
   -H 'Content-Type: application/json' \
   -H "Idempotency-Key: $(uuidgen)" \
-  -d '{"newLimitMinorUnits":50000}'
+  -d '{"newLimitMinorUnits":50000}' | jq .
 ```
 
 #### 8. Close the account
@@ -158,15 +159,15 @@ The balance must be zero first — `DELETE` returns `422 ACCOUNT_NOT_EMPTY` othe
 curl -sS -X POST "$BASE/account/$ACCOUNT_ID/withdrawal" \
   -H 'Content-Type: application/json' \
   -H "Idempotency-Key: $(uuidgen)" \
-  -d '{"amountMinorUnits":3000,"currency":"GBP"}'
+  -d '{"amountMinorUnits":3000,"currency":"GBP"}' | jq .
 curl -sS -X DELETE "$BASE/account/$ACCOUNT_ID" \
-  -H "Idempotency-Key: $(uuidgen)"
+  -H "Idempotency-Key: $(uuidgen)" | jq .
 ```
 
 #### 9. Look up the customer at any point
 
 ```bash
-curl -sS "$BASE/customer/$CUSTOMER_ID"
+curl -sS "$BASE/customer/$CUSTOMER_ID" | jq .
 ```
 
 Replaying step 3 with the **same** `Idempotency-Key` returns the original
