@@ -86,7 +86,7 @@ error envelope can't silently poison the variable used by later
 steps.
 
 ```bash
-BASE=http://localhost:8080
+export BASE=http://localhost:8080
 ```
 
 #### 1. Create a customer
@@ -96,7 +96,7 @@ RESP=$(curl -sS --fail-with-body -X POST "$BASE/customer" \
   -H 'Content-Type: application/json' \
   -H "Idempotency-Key: $(uuidgen)" \
   -d '{"name":"Alice"}') \
-  && CUSTOMER_ID=$(jq -r .id <<<"$RESP")
+  && export CUSTOMER_ID=$(jq -r .customerId <<<"$RESP")
 echo "$RESP" | jq .
 echo "CUSTOMER_ID=${CUSTOMER_ID:-<curl failed>}"
 ```
@@ -108,7 +108,7 @@ RESP=$(curl -sS --fail-with-body -X POST "$BASE/customer/$CUSTOMER_ID/account" \
   -H 'Content-Type: application/json' \
   -H "Idempotency-Key: $(uuidgen)" \
   -d '{"currency":"GBP","overdraftLimitMinorUnits":10000}') \
-  && ACCOUNT_ID=$(jq -r .id <<<"$RESP")
+  && export ACCOUNT_ID=$(jq -r .accountId <<<"$RESP")
 echo "$RESP" | jq .
 echo "ACCOUNT_ID=${ACCOUNT_ID:-<curl failed>}"
 ```
