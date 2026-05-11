@@ -156,13 +156,22 @@ curl -sS --fail-with-body -X PATCH "$BASE/account/$ACCOUNT_ID/overdraft-limit" \
 
 #### 8. Close the account
 
-The balance must be zero first — `DELETE` returns `422 ACCOUNT_NOT_EMPTY` otherwise.
+`DELETE` refuses to close an account with a non-zero balance. The
+block below demonstrates the rejection on the funded account, then
+zeros the balance, then closes for real.
 
 ```bash
+# 8a. DELETE while balance is 3000 → curl exits 22, body shows ACCOUNT_NOT_EMPTY.
+curl -sS --fail-with-body -X DELETE "$BASE/account/$ACCOUNT_ID" \
+  -H "Idempotency-Key: $(uuidgen)" | jq .
+
+# 8b. Withdraw the remaining balance.
 curl -sS --fail-with-body -X POST "$BASE/account/$ACCOUNT_ID/withdrawal" \
   -H 'Content-Type: application/json' \
   -H "Idempotency-Key: $(uuidgen)" \
   -d '{"amountMinorUnits":3000,"currency":"GBP"}' | jq .
+
+# 8c. DELETE again → status CLOSED.
 curl -sS --fail-with-body -X DELETE "$BASE/account/$ACCOUNT_ID" \
   -H "Idempotency-Key: $(uuidgen)" | jq .
 ```
