@@ -12,6 +12,22 @@ For the architectural reasoning behind every choice see
 for the build-ordered how-to see
 [`docs/implementation.md`](docs/implementation.md).
 
+## Requirements
+
+The Gradle wrapper (`./gradlew`) ships its own Gradle 9.3.0 and uses
+the [foojay toolchain resolver](https://github.com/gradle/foojay-toolchains)
+to auto-provision JDK 25 if it isn't already on the host — so the only
+hard prereq for building and running is a system JDK new enough to
+launch the wrapper.
+
+| Tool | Minimum | Why |
+| --- | --- | --- |
+| **JDK** | 17 | Launches the Gradle wrapper. JDK 25 is auto-fetched via foojay for the build itself. |
+| **Docker Engine + Compose v2** | 24.0 | Only needed for `docker compose up`. |
+| **`jq`** | 1.6 | Pretty-prints responses and extracts ids in the [Usage](#usage) walk-through. |
+| **`curl`** | any | HTTP client in the walk-through. |
+| **`uuidgen`** | any | Generates per-request `Idempotency-Key` values in the walk-through. Ships with macOS and `util-linux`. |
+
 ## Storage
 
 The ledger keeps event streams **in memory by default** — accounts and
