@@ -264,8 +264,8 @@ YAML event streams survive container restarts.
 
 | Property | Default | Purpose |
 | --- | --- | --- |
-| `ledger.storage.type` | `yaml` | `yaml` \| `in-memory` — picks the `EventStore` adapter via `@ConditionalOnProperty` |
-| `ledger.storage.yaml.directory` | `./data/streams` | Where stream files live |
+| `ledger.storage.type` | `in-memory` | `in-memory` \| `yaml` — picks the `EventStore` adapter via `@ConditionalOnProperty` |
+| `ledger.storage.yaml.directory` | `./data/streams` | Where stream files live (only when `type=yaml`) |
 | `ledger.idempotency.cache-size` | `10000` | Max keys in memory; LRU eviction |
 | `ledger.idempotency.ttl` | `24h` | Keys expire after this window |
 | `server.port` | `8080` | |

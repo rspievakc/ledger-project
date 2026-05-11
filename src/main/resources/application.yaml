@@ -19,7 +19,9 @@ springdoc:
 
 ledger:
   storage:
-    type: yaml
+    # in-memory: zero-config default, events live for the JVM lifetime.
+    # yaml: persist per-account event streams to disk under `directory`.
+    type: in-memory
     yaml:
       directory: ./data/streams
   idempotency:

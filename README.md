@@ -3,20 +3,52 @@
 A small Spring Boot 3 / Java 25 service implementing an
 **event-sourced money ledger**: customers hold accounts, accounts
 have a fixed currency and configurable overdraft limit, and balances
-are derived by folding an append-only event stream stored on disk as
-YAML. All write endpoints are idempotent.
+are derived by folding an append-only event stream. Storage is
+in-memory by default with an opt-in YAML-on-disk adapter. All write
+endpoints are idempotent.
 
 For the architectural reasoning behind every choice see
 [`docs/architecture.md`](docs/architecture.md);
 for the build-ordered how-to see
 [`docs/implementation.md`](docs/implementation.md).
 
+## Storage
+
+The ledger keeps event streams **in memory by default** — accounts and
+balances live for the lifetime of the JVM process and reset on
+restart. This keeps the local workflow zero-config: no filesystem
+permissions, no leftover state between runs, no cleanup.
+
+For persistence across restarts, opt into the YAML adapter — one env
+var (or the equivalent property in `application.yaml`):
+
+```bash
+LEDGER_STORAGE_TYPE=yaml ./gradlew bootRun
+# optionally override the directory (defaults to ./data/streams):
+LEDGER_STORAGE_TYPE=yaml \
+  LEDGER_STORAGE_YAML_DIRECTORY=./data/streams \
+  ./gradlew bootRun
+```
+
+```yaml
+ledger:
+  storage:
+    type: yaml          # default: in-memory
+    yaml:
+      directory: ./data/streams
+```
+
+`docker compose up` already does this — it sets
+`LEDGER_STORAGE_TYPE=yaml` and bind-mounts `./data` so per-account
+streams survive container restarts. On-disk format is one YAML file
+per account at `<directory>/account-<uuid>.yaml`.
+
 ## Quick-start
 
 ```bash
 ./gradlew test                  # run the suite (~150 tests)
 ./gradlew check                 # tests + Jacoco coverage gate (M8)
-./gradlew bootRun               # run on :8080, data in ./data
+./gradlew bootRun               # run on :8080 (in-memory storage by default)
 ./gradlew bootBuildImage        # build the OCI image
 docker compose up               # run the image with persistent volume
 open http://localhost:8080/swagger-ui.html
@@ -202,18 +234,20 @@ classDiagram
 ```
 
 State (balance, status) is **derived** by folding events; the source
-of truth is the per-account event stream on disk under
-`./data/streams/account-<uuid>.yaml`.
+of truth is the per-account event stream — held in memory by default,
+or persisted to `<directory>/account-<uuid>.yaml` when the YAML
+adapter is enabled (see [Storage](#storage)).
 
 ## How to add a new storage adapter
 
 The persistence boundary is the
 [`EventStore`](src/main/java/com/teya/ledger/infrastructure/port/EventStore.java)
-interface (`append` + `readFrom`). The default is the YAML adapter at
-[`YamlEventStore`](src/main/java/com/teya/ledger/infrastructure/yaml/YamlEventStore.java);
-the simplest reference adapter is the in-memory one at
+interface (`append` + `readFrom`). The default adapter is the
+in-memory one at
 [`InMemoryEventStore`](src/main/java/com/teya/ledger/infrastructure/memory/InMemoryEventStore.java)
-— ~70 lines.
+— ~70 lines, also the simplest reference. The on-disk adapter is
+[`YamlEventStore`](src/main/java/com/teya/ledger/infrastructure/yaml/YamlEventStore.java)
+(opt-in via `ledger.storage.type=yaml`).
 
 To add (e.g.) a JDBC adapter:
 
@@ -228,8 +262,8 @@ via the matching env var):
 
 | Property | Default | Purpose |
 | --- | --- | --- |
-| `ledger.storage.type` | `yaml` | `yaml` \| `in-memory` — selects the adapter |
-| `ledger.storage.yaml.directory` | `./data/streams` | Per-stream YAML files live here |
+| `ledger.storage.type` | `in-memory` | `in-memory` \| `yaml` — selects the adapter |
+| `ledger.storage.yaml.directory` | `./data/streams` | Per-stream YAML files live here (only when `type=yaml`) |
 | `ledger.idempotency.cache-size` | `10000` | Max keys in the in-memory cache |
 | `ledger.idempotency.ttl` | `PT24H` | Per-entry TTL |
 | `server.port` | `8080` | |
