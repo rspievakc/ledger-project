@@ -169,7 +169,7 @@ public class AccountService {
      * Package-private so sibling services (e.g. DepositService) and
      * {@link ProjectionCache#readAll} use the same naming convention.
      */
-    static String streamId(AccountId accountId) {
+    public static String streamId(AccountId accountId) {
         return ACCOUNT_STREAM_PREFIX + accountId;
     }
 }

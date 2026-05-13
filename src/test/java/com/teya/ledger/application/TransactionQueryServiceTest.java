@@ -95,4 +95,20 @@ class TransactionQueryServiceTest {
         Customer alice = customers.create("Alice");
         return accounts.open(alice.id(), GBP, 0L);
     }
+
+    @Test
+    void check_balance_to_date() {
+        try {
+            Account a = openGbp();
+            deposits.deposit(a.id(), 100L, GBP, "k1");
+            Thread.sleep(1000);
+            deposits.deposit(a.id(), 200L, GBP, "k2");
+            Thread.sleep(1000);
+            deposits.deposit(a.id(), 300L, GBP, "k2");
+            Thread.sleep(1000);
+        } catch (InterruptedException ex) {
+            ex.printStackTrace();
+        }
+
+    }
 }
