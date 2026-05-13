@@ -320,7 +320,23 @@ classDiagram
     class Customer { id, name, createdAt }
     class Account { id, customerId, currency, overdraftLimit, status, balance }
     Customer "1" --> "*" Account : owns
-    Account "1" --> "*" Event : history (append-only)
+    Account "1" --> "*" AccountEvent : history (append-only)
+
+    class AccountEvent {
+        <<sealed>>
+        accountId, occurredAt
+    }
+    class AccountOpened { customerId, currency, initialOverdraftLimitMinorUnits }
+    class MoneyDeposited { amountMinorUnits, currency, idempotencyKey }
+    class MoneyWithdrawn { amountMinorUnits, currency, idempotencyKey }
+    class OverdraftLimitChanged { newLimitMinorUnits }
+    class AccountClosed
+
+    AccountEvent <|-- AccountOpened
+    AccountEvent <|-- MoneyDeposited
+    AccountEvent <|-- MoneyWithdrawn
+    AccountEvent <|-- OverdraftLimitChanged
+    AccountEvent <|-- AccountClosed
 ```
 
 State (balance, status) is **derived** by folding events; the source
