@@ -503,6 +503,7 @@ choice, not an oversight.
 | `PATCH` | `/account/{accountId}/overdraft-limit` | Change overdraft. Body: `{newLimitMinorUnits}`. Emits `OverdraftLimitChanged`. |
 | `DELETE` | `/account/{accountId}` | Close the account. Refuses with `ACCOUNT_NOT_EMPTY` unless balance is exactly zero. |
 | `GET` | `/account/{accountId}/transaction?after=<seq>&limit=50` | Paginated history; cursor-based on event sequence. Default `limit=50`, max `200`. Response: `{items: [...], nextCursor: <seq or null>}`. |
+| `GET` | `/account/{accountId}/balance?at=<ISO-8601>` | Point-in-time balance. Folds every money event with `occurredAt <= at` (inclusive cutoff). Response: `{balanceMinorUnits, asOf}`. Unknown accounts return `0` (consistent with empty history). |
 
 All write endpoints require `Idempotency-Key`. All endpoints
 documented in OpenAPI via `springdoc-openapi-starter-webmvc-ui`,
@@ -522,6 +523,34 @@ Cursor-based on the per-stream event sequence number.
 - **Chosen: cursor = event seq.** The cursor is data we already have
   (seq is the natural sort key); appends never invalidate older
   cursors; pagination round-trips cleanly under concurrent writes.
+
+### Point-in-time balance
+
+`GET /account/{accountId}/balance?at=<ISO-8601>` returns the balance
+the account *had* at the requested instant. Computed on demand by
+walking the event stream in pages of 200 and summing money events
+with `occurredAt <= at`. The cutoff is **inclusive** — an event whose
+`occurredAt` equals `at` is counted.
+
+#### Alternatives considered
+
+- **Path variable (`/balance/{at}`).** Awkward URL-encoding for ISO-8601
+  timestamps (`:` and `T`); harder to read in logs; the value isn't a
+  resource identifier. Rejected.
+- **Epoch-millis query param.** Less readable than ISO-8601, and Spring
+  binds `java.time.Instant` natively from ISO strings via
+  `@DateTimeFormat`. Rejected for ergonomics.
+- **Materialised daily balance snapshots.** Would make point-in-time
+  reads O(1) at the cost of a second write path and a snapshot
+  invalidation story. Worth it once histories are long enough that
+  full-stream scans hurt; today they aren't. Captured in §11.
+- **Exclusive cutoff (`occurredAt < at`).** Makes "the balance after
+  the deposit at `t`" awkward to express (callers must add 1 ms).
+  Rejected — inclusive matches how `as of` reads in English.
+- **Chosen: inclusive `<=` cutoff, walk the stream on each call.** Zero
+  extra state; correct under concurrent writes (events are append-only,
+  so a balance at a past instant never changes); easy to explain. Scans
+  the full stream, which is the tradeoff against snapshots.
 
 ---
 

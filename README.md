@@ -204,7 +204,27 @@ curl -sS --fail-with-body "$BASE/account/$ACCOUNT_ID" | jq .
 curl -sS --fail-with-body "$BASE/account/$ACCOUNT_ID/transaction?after=0&limit=50" | jq .
 ```
 
-#### 10. Raise the overdraft cap to £500
+#### 10. Balance at a point in time
+
+`at` is an ISO-8601 instant (UTC `Z` or any offset). Cutoff is
+**inclusive** — an event whose `occurredAt` equals `at` is counted.
+Unknown accounts return `0`.
+
+```bash
+# "Now" — equivalent to step 8's balanceMinorUnits.
+curl -sS --fail-with-body "$BASE/account/$ACCOUNT_ID/balance?at=$(date -u +%Y-%m-%dT%H:%M:%SZ)" | jq .
+
+# Before any deposits ever happened → 0.
+curl -sS --fail-with-body "$BASE/account/$ACCOUNT_ID/balance?at=2000-01-01T00:00:00Z" | jq .
+```
+
+Response:
+
+```json
+{ "balanceMinorUnits": 3000, "asOf": "2026-05-13T12:00:00Z" }
+```
+
+#### 11. Raise the overdraft cap to £500
 
 ```bash
 curl -sS --fail-with-body -X PATCH "$BASE/account/$ACCOUNT_ID/overdraft-limit" \
@@ -213,29 +233,29 @@ curl -sS --fail-with-body -X PATCH "$BASE/account/$ACCOUNT_ID/overdraft-limit" \
   -d '{"newLimitMinorUnits":50000}' | jq .
 ```
 
-#### 11. Close the account
+#### 12. Close the account
 
 `DELETE` refuses to close an account with a non-zero balance. The
 block below demonstrates the rejection on the funded account, then
 zeros the balance, then closes for real.
 
 ```bash
-# 11a. DELETE while balance is 3000 → curl exits 22, body shows ACCOUNT_NOT_EMPTY.
+# 12a. DELETE while balance is 3000 → curl exits 22, body shows ACCOUNT_NOT_EMPTY.
 curl -sS --fail-with-body -X DELETE "$BASE/account/$ACCOUNT_ID" \
   -H "Idempotency-Key: $(uuidgen)" | jq .
 
-# 11b. Withdraw the remaining balance.
+# 12b. Withdraw the remaining balance.
 curl -sS --fail-with-body -X POST "$BASE/account/$ACCOUNT_ID/withdrawal" \
   -H 'Content-Type: application/json' \
   -H "Idempotency-Key: $(uuidgen)" \
   -d '{"amountMinorUnits":3000,"currency":"GBP"}' | jq .
 
-# 11c. DELETE again → status CLOSED.
+# 12c. DELETE again → status CLOSED.
 curl -sS --fail-with-body -X DELETE "$BASE/account/$ACCOUNT_ID" \
   -H "Idempotency-Key: $(uuidgen)" | jq .
 ```
 
-#### 12. Look up the customer at any point
+#### 13. Look up the customer at any point
 
 ```bash
 curl -sS --fail-with-body "$BASE/customer/$CUSTOMER_ID" | jq .
@@ -265,6 +285,7 @@ require an `Idempotency-Key` header.
 | `PATCH` | `/account/{id}/overdraft-limit` | Change overdraft |
 | `DELETE` | `/account/{id}` | Close (only if balance == 0) |
 | `GET` | `/account/{id}/transaction?after=&limit=` | Paginated history |
+| `GET` | `/account/{id}/balance?at=` | Point-in-time balance (inclusive cutoff) |
 
 Full schema served at `/swagger-ui.html` and `/v3/api-docs` while the
 app is running. A checked-in copy lives at

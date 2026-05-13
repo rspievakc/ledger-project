@@ -9,6 +9,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.Currency;
@@ -23,6 +24,7 @@ class TransactionQueryServiceTest {
     private CustomerService customers;
     private AccountService accounts;
     private DepositService deposits;
+    private WithdrawalService withdrawals;
     private TransactionQueryService queries;
 
     @BeforeEach
@@ -34,6 +36,7 @@ class TransactionQueryServiceTest {
         customers = new CustomerService(store, mapper, clock);
         accounts = new AccountService(store, mapper, cache, locks, customers, clock);
         deposits = new DepositService(store, mapper, cache, locks, accounts, clock);
+        withdrawals = new WithdrawalService(store, mapper, cache, locks, accounts, clock);
         queries = new TransactionQueryService(store, mapper);
     }
 
@@ -97,18 +100,32 @@ class TransactionQueryServiceTest {
     }
 
     @Test
-    void check_balance_to_date() {
-        try {
-            Account a = openGbp();
-            deposits.deposit(a.id(), 100L, GBP, "k1");
-            Thread.sleep(1000);
-            deposits.deposit(a.id(), 200L, GBP, "k2");
-            Thread.sleep(1000);
-            deposits.deposit(a.id(), 300L, GBP, "k2");
-            Thread.sleep(1000);
-        } catch (InterruptedException ex) {
-            ex.printStackTrace();
-        }
+    void computes_balance_at_multiple_points_in_time() {
+        Instant t0 = clock.instant();
+        Instant t1 = t0.plus(Duration.ofMinutes(1));   // +100 -> 100
+        Instant t2 = t0.plus(Duration.ofMinutes(2));   // +200 -> 300
+        Instant t3 = t0.plus(Duration.ofMinutes(3));   //  -50 -> 250
+        Instant t4 = t0.plus(Duration.ofMinutes(4));   // +300 -> 550
+        Instant t5 = t0.plus(Duration.ofMinutes(5));   // -100 -> 450
 
+        Account a = openGbp();
+        deposits.deposit(a.id(), 100L, GBP, "d1", t1);
+        deposits.deposit(a.id(), 200L, GBP, "d2", t2);
+        withdrawals.withdraw(a.id(), 50L, GBP, "w1", t3);
+        deposits.deposit(a.id(), 300L, GBP, "d3", t4);
+        withdrawals.withdraw(a.id(), 100L, GBP, "w2", t5);
+
+        Duration half = Duration.ofSeconds(30);
+        assertThat(queries.balanceAt(a.id(), t0.plus(half))).isZero();
+        assertThat(queries.balanceAt(a.id(), t1.plus(half))).isEqualTo(100L);
+        assertThat(queries.balanceAt(a.id(), t2.plus(half))).isEqualTo(300L);
+        assertThat(queries.balanceAt(a.id(), t3.plus(half))).isEqualTo(250L);
+        assertThat(queries.balanceAt(a.id(), t4.plus(half))).isEqualTo(550L);
+        assertThat(queries.balanceAt(a.id(), t5.plus(half))).isEqualTo(450L);
+
+        // Boundary: cutoff equal to an event's occurredAt includes it.
+        assertThat(queries.balanceAt(a.id(), t2)).isEqualTo(300L);
+        // Unknown account is empty.
+        assertThat(queries.balanceAt(AccountId.random(), t5)).isZero();
     }
 }

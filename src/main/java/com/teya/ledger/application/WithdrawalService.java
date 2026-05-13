@@ -14,6 +14,7 @@ import com.teya.ledger.infrastructure.port.EventStore;
 import org.springframework.stereotype.Service;
 
 import java.time.Clock;
+import java.time.Instant;
 import java.util.Currency;
 import java.util.List;
 import java.util.concurrent.locks.ReentrantLock;
@@ -53,6 +54,14 @@ public class WithdrawalService {
      */
     public WithdrawalResult withdraw(AccountId accountId, long amountMinorUnits,
                                      Currency currency, String idempotencyKey) {
+        return withdraw(accountId, amountMinorUnits, currency, idempotencyKey, clock.instant());
+    }
+
+    /**
+     * Withdraws {@code amountMinorUnits} from {@code accountId}.
+     */
+    public WithdrawalResult withdraw(AccountId accountId, long amountMinorUnits,
+                                     Currency currency, String idempotencyKey, Instant when) {
         if (amountMinorUnits <= 0L) {
             throw new InvalidAmountException(amountMinorUnits);
         }
@@ -72,7 +81,7 @@ public class WithdrawalService {
                 throw new InsufficientFundsException(accountId, amountMinorUnits, available);
             }
             AccountEvent.MoneyWithdrawn event = new AccountEvent.MoneyWithdrawn(
-                accountId, amountMinorUnits, currency, clock.instant(), idempotencyKey);
+                accountId, amountMinorUnits, currency, when, idempotencyKey);
             EventRecord record = mapper.toRecord(event);
             AppendResult appended = eventStore.append(
                 AccountService.streamId(accountId), List.of(record));

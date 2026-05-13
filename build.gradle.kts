@@ -72,9 +72,13 @@ tasks.named("check") {
 }
 
 openApi {
-    apiDocsUrl.set("http://localhost:8080/v3/api-docs.yaml")
+    val port = (project.findProperty("openApiPort") as String?)?.toInt() ?: 8080
+    apiDocsUrl.set("http://localhost:$port/v3/api-docs.yaml")
     outputDir.set(file("$projectDir/docs"))
     outputFileName.set("openapi.yaml")
+    customBootRun {
+        args.set(listOf("--server.port=$port"))
+    }
 }
 
 tasks.named<BootBuildImage>("bootBuildImage") {

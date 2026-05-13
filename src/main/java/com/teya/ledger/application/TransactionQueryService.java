@@ -6,6 +6,7 @@ import com.teya.ledger.infrastructure.port.EventRecord;
 import com.teya.ledger.infrastructure.port.EventStore;
 import org.springframework.stereotype.Service;
 
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -71,6 +72,47 @@ public class TransactionQueryService {
         }
         Long nextCursor = more ? items.get(items.size() - 1).seq() : null;
         return new TransactionPage(List.copyOf(items), nextCursor);
+    }
+
+    /**
+     * Folds every money event with {@code occurredAt <= asOf} into a
+     * point-in-time balance for {@code accountId}.
+     *
+     * <p>The cutoff is inclusive: an event whose {@code occurredAt}
+     * exactly equals {@code asOf} contributes to the result. Lifecycle
+     * events (open / overdraft change / close) are ignored — they don't
+     * move money. An unknown account yields {@code 0}.
+     *
+     * <p>Walks the stream in pages of {@link #MAX_LIMIT} to bound
+     * per-call memory regardless of history length.
+     *
+     * @param accountId account whose balance to compute.
+     * @param asOf      inclusive upper bound on {@code occurredAt}.
+     * @return balance in minor units at {@code asOf}.
+     */
+    public long balanceAt(AccountId accountId, Instant asOf) {
+        String streamId = AccountService.streamId(accountId);
+        long balance = 0L;
+        long cursor = 0L;
+        while (true) {
+            List<EventRecord> page = eventStore.readFrom(streamId, cursor, MAX_LIMIT);
+            if (page.isEmpty()) break;
+            for (EventRecord rec : page) {
+                cursor = rec.seq();
+                AccountEvent event = mapper.toAccountEvent(rec);
+                if (event instanceof AccountEvent.MoneyDeposited e) {
+                    if (!e.occurredAt().isAfter(asOf)) {
+                        balance += e.amountMinorUnits();
+                    }
+                } else if (event instanceof AccountEvent.MoneyWithdrawn e) {
+                    if (!e.occurredAt().isAfter(asOf)) {
+                        balance -= e.amountMinorUnits();
+                    }
+                }
+            }
+            if (page.size() < MAX_LIMIT) break;
+        }
+        return balance;
     }
 
     /** Maps an AccountEvent to a public Item with its persisted seq, or null for non-money events. */
