@@ -10,6 +10,7 @@ import java.io.UncheckedIOException;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
@@ -135,6 +136,36 @@ public final class YamlEventStore implements EventStore {
         } finally {
             lock.unlock();
         }
+    }
+
+    /** {@inheritDoc} */
+    @Override
+    public List<String> listStreams(String prefix) {
+        if (prefix == null) {
+            throw new IllegalArgumentException("prefix must not be null");
+        }
+        // Stream discovery is filesystem-driven so a restarted process
+        // sees every stream persisted by an earlier process, even before
+        // any read or write has warmed the in-memory caches.
+        Path root = layout.root();
+        if (!Files.isDirectory(root)) {
+            return List.of();
+        }
+        List<String> matches = new ArrayList<>();
+        try (DirectoryStream<Path> entries = Files.newDirectoryStream(root, "*.yaml")) {
+            for (Path entry : entries) {
+                String fileName = entry.getFileName().toString();
+                // Strip the ".yaml" suffix added by StreamFileLayout to
+                // recover the original stream id.
+                String streamId = fileName.substring(0, fileName.length() - ".yaml".length());
+                if (streamId.startsWith(prefix)) {
+                    matches.add(streamId);
+                }
+            }
+        } catch (IOException e) {
+            throw new UncheckedIOException("failed to enumerate streams under " + root, e);
+        }
+        return List.copyOf(matches);
     }
 
     /**

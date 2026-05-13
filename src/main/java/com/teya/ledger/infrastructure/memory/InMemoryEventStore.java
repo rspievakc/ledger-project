@@ -57,6 +57,24 @@ public final class InMemoryEventStore implements EventStore {
 
     /** {@inheritDoc} */
     @Override
+    public List<String> listStreams(String prefix) {
+        if (prefix == null) {
+            throw new IllegalArgumentException("prefix must not be null");
+        }
+        List<String> matches = new ArrayList<>();
+        // streams map is only populated by append(), so every entry has
+        // at least one record — the "empty placeholder" exclusion in the
+        // port contract is honoured for free.
+        for (String streamId : streams.keySet()) {
+            if (streamId.startsWith(prefix)) {
+                matches.add(streamId);
+            }
+        }
+        return List.copyOf(matches);
+    }
+
+    /** {@inheritDoc} */
+    @Override
     public List<EventRecord> readFrom(String streamId, long afterSeq, int limit) {
         if (afterSeq < 0L) {
             throw new IllegalArgumentException("afterSeq must be >= 0");

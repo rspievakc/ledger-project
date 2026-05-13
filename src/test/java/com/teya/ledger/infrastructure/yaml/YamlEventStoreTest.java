@@ -121,6 +121,38 @@ class YamlEventStoreTest {
         assertThat(store.readFrom("s", 10L, 100)).isEmpty();
     }
 
+    @Test
+    void list_streams_returns_only_streams_matching_prefix() {
+        store.append("account-a", List.of(rec("E1")));
+        store.append("account-b", List.of(rec("E1")));
+        store.append("customers", List.of(rec("E1")));
+        assertThat(store.listStreams("account-"))
+            .containsExactlyInAnyOrder("account-a", "account-b");
+    }
+
+    @Test
+    void list_streams_with_empty_prefix_returns_all_streams() {
+        store.append("account-a", List.of(rec("E1")));
+        store.append("customers", List.of(rec("E1")));
+        assertThat(store.listStreams(""))
+            .containsExactlyInAnyOrder("account-a", "customers");
+    }
+
+    @Test
+    void list_streams_returns_empty_when_root_is_empty() {
+        assertThat(store.listStreams("account-")).isEmpty();
+    }
+
+    @Test
+    void list_streams_finds_streams_persisted_across_recreation() {
+        store.append("account-a", List.of(rec("E1")));
+        EventStore fresh = new YamlEventStore(tempDir);
+        // No appends on `fresh` — it must still discover the on-disk
+        // stream so a restart can answer "list streams" before any
+        // explicit read or write reloads it.
+        assertThat(fresh.listStreams("account-")).containsExactly("account-a");
+    }
+
     private EventRecord rec(String type) {
         return new EventRecord(
             0L, UUID.randomUUID(), type,

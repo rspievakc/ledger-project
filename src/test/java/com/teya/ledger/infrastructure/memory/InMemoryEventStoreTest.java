@@ -94,6 +94,38 @@ class InMemoryEventStoreTest {
         assertThat(store.readFrom("s1", 10L, 100)).isEmpty();
     }
 
+    @Test
+    void list_streams_returns_only_streams_matching_prefix() {
+        store.append("account-a", List.of(unseq("E1")));
+        store.append("account-b", List.of(unseq("E1")));
+        store.append("customers", List.of(unseq("E1")));
+        assertThat(store.listStreams("account-"))
+            .containsExactlyInAnyOrder("account-a", "account-b");
+    }
+
+    @Test
+    void list_streams_with_empty_prefix_returns_all_streams() {
+        store.append("account-a", List.of(unseq("E1")));
+        store.append("customers", List.of(unseq("E1")));
+        assertThat(store.listStreams(""))
+            .containsExactlyInAnyOrder("account-a", "customers");
+    }
+
+    @Test
+    void list_streams_returns_empty_when_no_streams_exist() {
+        assertThat(store.listStreams("account-")).isEmpty();
+    }
+
+    @Test
+    void list_streams_skips_streams_with_no_appended_events() {
+        store.append("account-a", List.of(unseq("E1")));
+        // Speculative read does not create the stream — the fast-path
+        // in readFrom avoids materialising a per-stream lock entry, so
+        // "account-ghost" must not show up in listStreams afterwards.
+        store.readFrom("account-ghost", 0L, 10);
+        assertThat(store.listStreams("account-")).containsExactly("account-a");
+    }
+
     private EventRecord unseq(String type) {
         return EventRecord.unsequenced(
             UUID.randomUUID(), type, Instant.now(), Map.of("dummy", true));

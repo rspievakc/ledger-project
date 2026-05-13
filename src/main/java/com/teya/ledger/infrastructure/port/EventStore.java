@@ -43,4 +43,24 @@ public interface EventStore {
      * @return ordered list, possibly empty if no more events exist.
      */
     List<EventRecord> readFrom(String streamId, long afterSeq, int limit);
+
+    /**
+     * Lists every stream id whose name starts with {@code prefix}.
+     *
+     * <p>Used by application services that need to enumerate aggregates
+     * of a kind without a separate index — e.g. listing every account
+     * stream ({@code "account-"}) when resolving "all accounts for
+     * customer X". Returned ids are the same logical identifiers used
+     * by {@link #append} and {@link #readFrom}; order is unspecified
+     * and callers must not depend on it.
+     *
+     * <p>A stream id is considered to exist once at least one record
+     * has been appended to it; empty placeholder streams are not
+     * reported.
+     *
+     * @param prefix non-null prefix to match; pass an empty string to
+     *               list every stream.
+     * @return list of matching stream ids, possibly empty.
+     */
+    List<String> listStreams(String prefix);
 }
