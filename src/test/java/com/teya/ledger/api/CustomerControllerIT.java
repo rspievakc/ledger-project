@@ -62,4 +62,26 @@ class CustomerControllerIT {
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.name").value("Bob"));
     }
+
+    @Test
+    void list_returns_the_customers_created_in_this_test() throws Exception {
+        // Two uniquely-named customers — uses nanoTime so the assertion
+        // stays specific even when prior tests in the @SpringBootTest
+        // context have already created their own customers.
+        String suffix = "-" + System.nanoTime();
+        mvc.perform(post("/customer")
+                .header("Idempotency-Key", TestSetup.key())
+                .contentType("application/json")
+                .content("{\"name\":\"Listed-A" + suffix + "\"}"))
+            .andExpect(status().isCreated());
+        mvc.perform(post("/customer")
+                .header("Idempotency-Key", TestSetup.key())
+                .contentType("application/json")
+                .content("{\"name\":\"Listed-B" + suffix + "\"}"))
+            .andExpect(status().isCreated());
+        mvc.perform(get("/customer"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$[?(@.name=='Listed-A" + suffix + "')]").exists())
+            .andExpect(jsonPath("$[?(@.name=='Listed-B" + suffix + "')]").exists());
+    }
 }

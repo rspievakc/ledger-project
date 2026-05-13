@@ -27,6 +27,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.Currency;
+import java.util.List;
 
 /**
  * HTTP endpoints for the account lifecycle.
@@ -65,6 +66,22 @@ public class AccountController {
             req.overdraftLimitMinorUnits());
         return ResponseEntity.status(HttpStatus.CREATED)
             .body(AccountResponse.from(opened));
+    }
+
+    /** List every account owned by a customer. */
+    @GetMapping("/customer/{customerId}/account")
+    @Operation(summary = "List a customer's accounts",
+        description = "Returns every account owned by the customer, including closed ones "
+            + "(distinguish via the `status` field). Unpaginated.")
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "Account list"),
+        @ApiResponse(responseCode = "404", description = "Unknown customerId",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    })
+    public List<AccountResponse> listForCustomer(@PathVariable("customerId") String customerId) {
+        return accounts.listByCustomer(CustomerId.of(customerId)).stream()
+            .map(AccountResponse::from)
+            .toList();
     }
 
     /** Get the current state of an account. */

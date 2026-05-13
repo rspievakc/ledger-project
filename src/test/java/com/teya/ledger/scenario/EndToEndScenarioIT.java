@@ -38,6 +38,20 @@ class EndToEndScenarioIT {
         String accountA = openAccount(customerId, "GBP", 0L);
         String accountB = openAccount(customerId, "GBP", 0L);
 
+        // 2a. Both accounts surface in the per-customer listing, matching
+        // the README walk-through's "list accounts for a customer" step.
+        mvc.perform(get("/customer/" + customerId + "/account"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.length()").value(2))
+            .andExpect(jsonPath("$[?(@.accountId=='" + accountA + "')]").exists())
+            .andExpect(jsonPath("$[?(@.accountId=='" + accountB + "')]").exists());
+
+        // 2b. The customer surfaces in the global listing, matching
+        // the README walk-through's "list all customers" step.
+        mvc.perform(get("/customer"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$[?(@.customerId=='" + customerId + "')]").exists());
+
         // 3. Deposit on each
         deposit(accountA, 1_000L);
         deposit(accountB, 500L);

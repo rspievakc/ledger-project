@@ -79,6 +79,37 @@ class AccountControllerIT {
     }
 
     @Test
+    void list_for_customer_returns_only_that_customers_accounts() throws Exception {
+        String alice = createCustomer("Alice" + System.nanoTime());
+        String aliceAccount1 = openAccountFor(alice);
+        String aliceAccount2 = openAccountFor(alice);
+        String bob = createCustomer("Bob" + System.nanoTime());
+        String bobAccount = openAccountFor(bob);
+
+        mvc.perform(get("/customer/" + alice + "/account"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.length()").value(2))
+            .andExpect(jsonPath("$[?(@.accountId=='" + aliceAccount1 + "')]").exists())
+            .andExpect(jsonPath("$[?(@.accountId=='" + aliceAccount2 + "')]").exists())
+            .andExpect(jsonPath("$[?(@.accountId=='" + bobAccount + "')]").doesNotExist());
+    }
+
+    @Test
+    void list_for_customer_returns_empty_when_customer_has_no_accounts() throws Exception {
+        String customerId = createCustomer("NoAccounts" + System.nanoTime());
+        mvc.perform(get("/customer/" + customerId + "/account"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.length()").value(0));
+    }
+
+    @Test
+    void list_for_unknown_customer_returns_404() throws Exception {
+        mvc.perform(get("/customer/" + java.util.UUID.randomUUID() + "/account"))
+            .andExpect(status().isNotFound())
+            .andExpect(jsonPath("$.code").value("CUSTOMER_NOT_FOUND"));
+    }
+
+    @Test
     void open_rejects_invalid_currency_code() throws Exception {
         String customerId = createCustomer("X");
         mvc.perform(post("/customer/" + customerId + "/account")
@@ -106,6 +137,16 @@ class AccountControllerIT {
                     .header("Idempotency-Key", TestSetup.key())
                     .contentType("application/json")
                     .content("{\"currency\":\"" + currency + "\",\"overdraftLimitMinorUnits\":" + overdraft + "}"))
+                .andReturn().getResponse().getContentAsString(),
+            "accountId");
+    }
+
+    private String openAccountFor(String customerId) throws Exception {
+        return extract(
+            mvc.perform(post("/customer/" + customerId + "/account")
+                    .header("Idempotency-Key", TestSetup.key())
+                    .contentType("application/json")
+                    .content("{\"currency\":\"GBP\",\"overdraftLimitMinorUnits\":0}"))
                 .andReturn().getResponse().getContentAsString(),
             "accountId");
     }

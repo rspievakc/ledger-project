@@ -23,6 +23,8 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.List;
+
 /**
  * HTTP endpoints for customer creation and lookup.
  *
@@ -54,6 +56,20 @@ public class CustomerController {
     public ResponseEntity<CustomerResponse> create(@Valid @RequestBody CreateCustomerRequest req) {
         Customer c = customers.create(req.name());
         return ResponseEntity.status(HttpStatus.CREATED).body(CustomerResponse.from(c));
+    }
+
+    /** List every customer, oldest first. */
+    @GetMapping
+    @Operation(summary = "List all customers",
+        description = "Returns every customer that has been created, in creation order. "
+            + "Unpaginated; intended for the small-scale walk-through and admin use.")
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "Customer list")
+    })
+    public List<CustomerResponse> list() {
+        return customers.listAll().stream()
+            .map(CustomerResponse::from)
+            .toList();
     }
 
     /** Look up a customer by id. */
