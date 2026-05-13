@@ -149,13 +149,54 @@ curl -sS --fail-with-body -X POST "$BASE/account/$ACCOUNT_ID/withdrawal" \
   -d '{"amountMinorUnits":2000,"currency":"GBP"}' | jq .
 ```
 
-#### 7. Read current balance / state
+#### 7. Reuse an `Idempotency-Key` with a different body
+
+Exercises the **`409 IDEMPOTENCY_KEY_REUSED_WITH_DIFFERENT_REQUEST`**
+path on both money-movement endpoints. The first call records a
+result for the key; the second sends the **same key** with a
+**different body** and is rejected — see
+[Idempotency contract](#idempotency-contract).
+
+```bash
+export DEP_KEY=$(uuidgen) WD_KEY=$(uuidgen)
+
+# 7a. Deposit £0.10 with DEP_KEY → 201.
+curl -sS --fail-with-body -X POST "$BASE/account/$ACCOUNT_ID/deposit" \
+  -H 'Content-Type: application/json' \
+  -H "Idempotency-Key: $DEP_KEY" \
+  -d '{"amountMinorUnits":10,"currency":"GBP"}' | jq .
+
+# 7b. Same DEP_KEY, different amount → curl exits 22, body shows
+#     IDEMPOTENCY_KEY_REUSED_WITH_DIFFERENT_REQUEST.
+curl -sS --fail-with-body -X POST "$BASE/account/$ACCOUNT_ID/deposit" \
+  -H 'Content-Type: application/json' \
+  -H "Idempotency-Key: $DEP_KEY" \
+  -d '{"amountMinorUnits":20,"currency":"GBP"}' | jq .
+
+# 7c. Withdraw £0.10 with WD_KEY → 201.
+curl -sS --fail-with-body -X POST "$BASE/account/$ACCOUNT_ID/withdrawal" \
+  -H 'Content-Type: application/json' \
+  -H "Idempotency-Key: $WD_KEY" \
+  -d '{"amountMinorUnits":10,"currency":"GBP"}' | jq .
+
+# 7d. Same WD_KEY, different amount → curl exits 22, body shows
+#     IDEMPOTENCY_KEY_REUSED_WITH_DIFFERENT_REQUEST.
+curl -sS --fail-with-body -X POST "$BASE/account/$ACCOUNT_ID/withdrawal" \
+  -H 'Content-Type: application/json' \
+  -H "Idempotency-Key: $WD_KEY" \
+  -d '{"amountMinorUnits":20,"currency":"GBP"}' | jq .
+```
+
+The successful pair nets to zero, so the account balance is unchanged
+heading into the steps below (still £30.00).
+
+#### 8. Read current balance / state
 
 ```bash
 curl -sS --fail-with-body "$BASE/account/$ACCOUNT_ID" | jq .
 ```
 
-#### 8. Page through transactions
+#### 9. Page through transactions
 
 `after` is the cursor (last seen `seq`); `limit` is bounded to `[1, 200]`.
 
@@ -163,7 +204,7 @@ curl -sS --fail-with-body "$BASE/account/$ACCOUNT_ID" | jq .
 curl -sS --fail-with-body "$BASE/account/$ACCOUNT_ID/transaction?after=0&limit=50" | jq .
 ```
 
-#### 9. Raise the overdraft cap to £500
+#### 10. Raise the overdraft cap to £500
 
 ```bash
 curl -sS --fail-with-body -X PATCH "$BASE/account/$ACCOUNT_ID/overdraft-limit" \
@@ -172,37 +213,37 @@ curl -sS --fail-with-body -X PATCH "$BASE/account/$ACCOUNT_ID/overdraft-limit" \
   -d '{"newLimitMinorUnits":50000}' | jq .
 ```
 
-#### 10. Close the account
+#### 11. Close the account
 
 `DELETE` refuses to close an account with a non-zero balance. The
 block below demonstrates the rejection on the funded account, then
 zeros the balance, then closes for real.
 
 ```bash
-# 10a. DELETE while balance is 3000 → curl exits 22, body shows ACCOUNT_NOT_EMPTY.
+# 11a. DELETE while balance is 3000 → curl exits 22, body shows ACCOUNT_NOT_EMPTY.
 curl -sS --fail-with-body -X DELETE "$BASE/account/$ACCOUNT_ID" \
   -H "Idempotency-Key: $(uuidgen)" | jq .
 
-# 10b. Withdraw the remaining balance.
+# 11b. Withdraw the remaining balance.
 curl -sS --fail-with-body -X POST "$BASE/account/$ACCOUNT_ID/withdrawal" \
   -H 'Content-Type: application/json' \
   -H "Idempotency-Key: $(uuidgen)" \
   -d '{"amountMinorUnits":3000,"currency":"GBP"}' | jq .
 
-# 10c. DELETE again → status CLOSED.
+# 11c. DELETE again → status CLOSED.
 curl -sS --fail-with-body -X DELETE "$BASE/account/$ACCOUNT_ID" \
   -H "Idempotency-Key: $(uuidgen)" | jq .
 ```
 
-#### 11. Look up the customer at any point
+#### 12. Look up the customer at any point
 
 ```bash
 curl -sS --fail-with-body "$BASE/customer/$CUSTOMER_ID" | jq .
 ```
 
 Replaying step 5 with the **same** `Idempotency-Key` returns the original
-response byte-for-byte. Replaying it with the same key but a different
-body returns `409 IDEMPOTENCY_KEY_REUSED_WITH_DIFFERENT_REQUEST` — see
+response byte-for-byte; the same-key-different-body conflict is
+demonstrated end-to-end in step 7 above — see
 [Idempotency contract](#idempotency-contract).
 
 ## API surface
