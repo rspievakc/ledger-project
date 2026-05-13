@@ -24,6 +24,22 @@ tags:
   description: Read paginated money-movement history for an account
 paths:
   /customer:
+    get:
+      tags:
+      - Customer
+      summary: List all customers
+      description: Returns every customer that has been created, in creation order.
+        Unpaginated; intended for the small-scale walk-through and admin use.
+      operationId: list
+      responses:
+        "200":
+          description: Customer list
+          content:
+            '*/*':
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/CustomerResponse"
     post:
       tags:
       - Customer
@@ -56,6 +72,34 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
   /customer/{customerId}/account:
+    get:
+      tags:
+      - Account
+      summary: List a customer's accounts
+      description: Returns every account owned by the customer, including closed
+        ones (distinguish via the `status` field). Unpaginated.
+      operationId: listForCustomer
+      parameters:
+      - name: customerId
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        "200":
+          description: Account list
+          content:
+            '*/*':
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AccountResponse"
+        "404":
+          description: Unknown customerId
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
     post:
       tags:
       - Account

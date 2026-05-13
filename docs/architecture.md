@@ -229,6 +229,11 @@ public interface EventStore {
   // Read events from `streamId` with sequence > `afterSeq`, up to
   // `limit` records. Implementations may return fewer.
   List<EventRecord> readFrom(String streamId, long afterSeq, int limit);
+
+  // Enumerate every stream id starting with `prefix`. Enables
+  // "all accounts for customer X" without a separate index — at the
+  // cost of scanning every account stream on each call.
+  List<String> listStreams(String prefix);
 }
 ```
 
@@ -488,8 +493,10 @@ choice, not an oversight.
 | Method | Path | Purpose |
 | --- | --- | --- |
 | `POST` | `/customer` | Create a customer. Body: `{name}`. Returns: `{customerId, name, createdAt}`. |
+| `GET` | `/customer` | List all customers, oldest first. Unpaginated — folds the shared `customers` stream end-to-end (acceptable at current scale; same scaling caveat as `GET /customer/{customerId}`). |
 | `GET` | `/customer/{customerId}` | Fetch a customer. |
 | `POST` | `/customer/{customerId}/account` | Open an account. Body: `{currency, overdraftLimitMinorUnits}`. Returns: `{accountId, customerId, currency, overdraftLimitMinorUnits, status, balanceMinorUnits}`. Always opens with `balanceMinorUnits = 0`. |
+| `GET` | `/customer/{customerId}/account` | List every account for the customer (closed ones included, distinguished via `status`). Returns `404 CUSTOMER_NOT_FOUND` for an unknown customer. Implemented by enumerating `account-*` streams via `EventStore.listStreams` and filtering on `customerId` — O(total accounts); a dedicated `customer-accounts` index is captured in §11. |
 | `GET` | `/account/{accountId}` | Current state: id, customer, currency, overdraft limit, status, balance, last event seq. |
 | `POST` | `/account/{accountId}/deposit` | Deposit money. Body: `{amountMinorUnits, currency}`. Returns: `{eventId, seq, balanceAfterMinorUnits}`. |
 | `POST` | `/account/{accountId}/withdrawal` | Withdraw money. Body and response same shape as deposit. |
@@ -644,6 +651,11 @@ HTTP boundary.
   concurrency. Drop-in replacement for the YAML adapter; same port.
 - A **persistent `IdempotencyStore`** so idempotency survives
   process restarts.
+- A **`customer-accounts` index stream** so `GET /customer/{id}/account`
+  scales with the number of *that customer's* accounts rather than
+  with the total account count. Today the listing enumerates every
+  `account-*` stream and filters; fine at demo scale, wasteful past a
+  few thousand accounts.
 
 ### Operational
 

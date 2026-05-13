@@ -101,7 +101,16 @@ echo "$RESP" | jq .
 echo "CUSTOMER_ID=${CUSTOMER_ID:-<curl failed>}"
 ```
 
-#### 2. Open a GBP account with a £100 overdraft
+#### 2. List all customers
+
+Returns every customer in creation order. Unpaginated — fine at the
+walk-through scale.
+
+```bash
+curl -sS --fail-with-body "$BASE/customer" | jq .
+```
+
+#### 3. Open a GBP account with a £100 overdraft
 
 ```bash
 RESP=$(curl -sS --fail-with-body -X POST "$BASE/customer/$CUSTOMER_ID/account" \
@@ -113,7 +122,16 @@ echo "$RESP" | jq .
 echo "ACCOUNT_ID=${ACCOUNT_ID:-<curl failed>}"
 ```
 
-#### 3. Deposit £50.00
+#### 4. List the customer's accounts
+
+Includes closed accounts — distinguish via the `status` field. Returns
+`404 CUSTOMER_NOT_FOUND` for an unknown `customerId`.
+
+```bash
+curl -sS --fail-with-body "$BASE/customer/$CUSTOMER_ID/account" | jq .
+```
+
+#### 5. Deposit £50.00
 
 ```bash
 curl -sS --fail-with-body -X POST "$BASE/account/$ACCOUNT_ID/deposit" \
@@ -122,7 +140,7 @@ curl -sS --fail-with-body -X POST "$BASE/account/$ACCOUNT_ID/deposit" \
   -d '{"amountMinorUnits":5000,"currency":"GBP"}' | jq .
 ```
 
-#### 4. Withdraw £20.00
+#### 6. Withdraw £20.00
 
 ```bash
 curl -sS --fail-with-body -X POST "$BASE/account/$ACCOUNT_ID/withdrawal" \
@@ -131,13 +149,13 @@ curl -sS --fail-with-body -X POST "$BASE/account/$ACCOUNT_ID/withdrawal" \
   -d '{"amountMinorUnits":2000,"currency":"GBP"}' | jq .
 ```
 
-#### 5. Read current balance / state
+#### 7. Read current balance / state
 
 ```bash
 curl -sS --fail-with-body "$BASE/account/$ACCOUNT_ID" | jq .
 ```
 
-#### 6. Page through transactions
+#### 8. Page through transactions
 
 `after` is the cursor (last seen `seq`); `limit` is bounded to `[1, 200]`.
 
@@ -145,7 +163,7 @@ curl -sS --fail-with-body "$BASE/account/$ACCOUNT_ID" | jq .
 curl -sS --fail-with-body "$BASE/account/$ACCOUNT_ID/transaction?after=0&limit=50" | jq .
 ```
 
-#### 7. Raise the overdraft cap to £500
+#### 9. Raise the overdraft cap to £500
 
 ```bash
 curl -sS --fail-with-body -X PATCH "$BASE/account/$ACCOUNT_ID/overdraft-limit" \
@@ -154,35 +172,35 @@ curl -sS --fail-with-body -X PATCH "$BASE/account/$ACCOUNT_ID/overdraft-limit" \
   -d '{"newLimitMinorUnits":50000}' | jq .
 ```
 
-#### 8. Close the account
+#### 10. Close the account
 
 `DELETE` refuses to close an account with a non-zero balance. The
 block below demonstrates the rejection on the funded account, then
 zeros the balance, then closes for real.
 
 ```bash
-# 8a. DELETE while balance is 3000 → curl exits 22, body shows ACCOUNT_NOT_EMPTY.
+# 10a. DELETE while balance is 3000 → curl exits 22, body shows ACCOUNT_NOT_EMPTY.
 curl -sS --fail-with-body -X DELETE "$BASE/account/$ACCOUNT_ID" \
   -H "Idempotency-Key: $(uuidgen)" | jq .
 
-# 8b. Withdraw the remaining balance.
+# 10b. Withdraw the remaining balance.
 curl -sS --fail-with-body -X POST "$BASE/account/$ACCOUNT_ID/withdrawal" \
   -H 'Content-Type: application/json' \
   -H "Idempotency-Key: $(uuidgen)" \
   -d '{"amountMinorUnits":3000,"currency":"GBP"}' | jq .
 
-# 8c. DELETE again → status CLOSED.
+# 10c. DELETE again → status CLOSED.
 curl -sS --fail-with-body -X DELETE "$BASE/account/$ACCOUNT_ID" \
   -H "Idempotency-Key: $(uuidgen)" | jq .
 ```
 
-#### 9. Look up the customer at any point
+#### 11. Look up the customer at any point
 
 ```bash
 curl -sS --fail-with-body "$BASE/customer/$CUSTOMER_ID" | jq .
 ```
 
-Replaying step 3 with the **same** `Idempotency-Key` returns the original
+Replaying step 5 with the **same** `Idempotency-Key` returns the original
 response byte-for-byte. Replaying it with the same key but a different
 body returns `409 IDEMPOTENCY_KEY_REUSED_WITH_DIFFERENT_REQUEST` — see
 [Idempotency contract](#idempotency-contract).
@@ -196,8 +214,10 @@ require an `Idempotency-Key` header.
 | Method | Path | Purpose |
 | --- | --- | --- |
 | `POST` | `/customer` | Create a customer |
+| `GET` | `/customer` | List all customers |
 | `GET` | `/customer/{id}` | Look up a customer |
 | `POST` | `/customer/{id}/account` | Open an account (zero balance) |
+| `GET` | `/customer/{id}/account` | List a customer's accounts |
 | `GET` | `/account/{id}` | Current balance + state |
 | `POST` | `/account/{id}/deposit` | Deposit money |
 | `POST` | `/account/{id}/withdrawal` | Withdraw money |
