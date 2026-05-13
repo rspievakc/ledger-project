@@ -99,6 +99,48 @@ class AccountServiceTest {
     }
 
     @Test
+    void list_by_customer_returns_empty_when_customer_has_no_accounts() {
+        Customer alice = customers.create("Alice");
+        assertThat(accounts.listByCustomer(alice.id())).isEmpty();
+    }
+
+    @Test
+    void list_by_customer_returns_only_that_customers_accounts() {
+        Customer alice = customers.create("Alice");
+        Customer bob = customers.create("Bob");
+        Account a1 = accounts.open(alice.id(), GBP, 0L);
+        Account a2 = accounts.open(alice.id(), GBP, 0L);
+        accounts.open(bob.id(), GBP, 0L);
+        assertThat(accounts.listByCustomer(alice.id()))
+            .extracting(Account::id)
+            .containsExactlyInAnyOrder(a1.id(), a2.id());
+    }
+
+    @Test
+    void list_by_customer_throws_for_unknown_customer() {
+        assertThatThrownBy(() -> accounts.listByCustomer(
+            com.teya.ledger.domain.customer.CustomerId.random()))
+            .isInstanceOf(com.teya.ledger.domain.error.CustomerNotFoundException.class);
+    }
+
+    @Test
+    void list_by_customer_includes_closed_accounts() {
+        // A closed account is still owned by its customer — clients
+        // distinguish state by the `status` field, not by absence from
+        // the listing. This mirrors how `find(accountId)` keeps
+        // returning a closed account after delete.
+        Customer alice = customers.create("Alice");
+        Account opened = accounts.open(alice.id(), GBP, 0L);
+        accounts.close(opened.id());
+        assertThat(accounts.listByCustomer(alice.id()))
+            .singleElement()
+            .satisfies(a -> {
+                assertThat(a.id()).isEqualTo(opened.id());
+                assertThat(a.status()).isEqualTo(AccountStatus.CLOSED);
+            });
+    }
+
+    @Test
     void close_rejects_non_zero_balance() {
         Customer alice = customers.create("Alice");
         Account opened = accounts.open(alice.id(), GBP, 0L);

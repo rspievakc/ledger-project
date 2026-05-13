@@ -57,4 +57,20 @@ class CustomerServiceTest {
         assertThatThrownBy(() -> service.create("   "))
             .isInstanceOf(IllegalArgumentException.class);
     }
+
+    @Test
+    void list_all_returns_empty_when_no_customers_exist() {
+        assertThat(service.listAll()).isEmpty();
+    }
+
+    @Test
+    void list_all_returns_customers_in_creation_order() {
+        Customer alice = service.create("Alice");
+        Customer bob = service.create("Bob");
+        Customer carol = service.create("Carol");
+        // Customer stream is append-only and folded in seq order, so the
+        // listing reflects creation order — useful for the README walk-through
+        // and predictable in tests that assert ordering.
+        assertThat(service.listAll()).containsExactly(alice, bob, carol);
+    }
 }

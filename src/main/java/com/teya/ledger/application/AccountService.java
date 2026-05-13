@@ -12,6 +12,7 @@ import com.teya.ledger.infrastructure.port.EventStore;
 import org.springframework.stereotype.Service;
 
 import java.time.Clock;
+import java.util.ArrayList;
 import java.util.Currency;
 import java.util.List;
 import java.util.concurrent.locks.ReentrantLock;
@@ -76,6 +77,38 @@ public class AccountService {
             .orElseThrow(() -> new AccountNotFoundException(accountId));
     }
 
+    /**
+     * Returns every account owned by {@code customerId}, including
+     * closed ones — clients distinguish state via {@link Account#status}.
+     *
+     * <p>Enumerates the persistence layer's account streams (via
+     * {@link EventStore#listStreams}) and folds each through the
+     * {@link ProjectionCache}. This is O(total accounts) per call;
+     * acceptable while account counts are modest. A future
+     * {@code customer-accounts} index would let this scale linearly in
+     * the result size instead.
+     *
+     * @param customerId the customer whose accounts to return.
+     * @return all accounts for that customer, in unspecified order.
+     * @throws com.teya.ledger.domain.error.CustomerNotFoundException
+     *         if the customer does not exist — keeps the error envelope
+     *         consistent with {@link #open}.
+     */
+    public List<Account> listByCustomer(CustomerId customerId) {
+        // Validate up front so an unknown customer returns 404 rather
+        // than a misleading empty list — same contract as `open()`.
+        customers.find(customerId);
+        List<Account> matches = new ArrayList<>();
+        for (String streamId : eventStore.listStreams(ACCOUNT_STREAM_PREFIX)) {
+            AccountId accountId = AccountId.of(
+                streamId.substring(ACCOUNT_STREAM_PREFIX.length()));
+            cache.load(accountId)
+                .filter(a -> a.customerId().equals(customerId))
+                .ifPresent(matches::add);
+        }
+        return List.copyOf(matches);
+    }
+
     /** Changes the overdraft limit on an existing open account. */
     public Account changeOverdraft(AccountId accountId, long newLimitMinorUnits) {
         ReentrantLock lock = locks.lockFor(accountId);
@@ -125,11 +158,18 @@ public class AccountService {
     }
 
     /**
+     * Prefix shared by every per-account event stream id. Single
+     * source of truth for {@link #streamId} and the
+     * {@link #listByCustomer} enumeration — keep these in sync.
+     */
+    static final String ACCOUNT_STREAM_PREFIX = "account-";
+
+    /**
      * Returns the canonical event-stream identifier for an account.
      * Package-private so sibling services (e.g. DepositService) and
      * {@link ProjectionCache#readAll} use the same naming convention.
      */
     static String streamId(AccountId accountId) {
-        return "account-" + accountId;
+        return ACCOUNT_STREAM_PREFIX + accountId;
     }
 }

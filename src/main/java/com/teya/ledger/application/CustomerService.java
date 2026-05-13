@@ -70,6 +70,26 @@ public class CustomerService {
         throw new CustomerNotFoundException(id);
     }
 
+    /**
+     * Returns every customer that has ever been created, in
+     * creation order. Folds the shared {@code "customers"} stream
+     * end-to-end — acceptable while customer counts are small, but
+     * the same scaling note as {@link #find} applies if the customer
+     * stream is ever sharded.
+     *
+     * @return all known customers, oldest first; empty if none exist.
+     */
+    public List<Customer> listAll() {
+        List<Customer> all = new ArrayList<>();
+        for (CustomerEvent ev : readAllCustomerEvents()) {
+            if (ev instanceof CustomerEvent.CustomerCreated created) {
+                all.add(new Customer(
+                    created.customerId(), created.name(), created.occurredAt()));
+            }
+        }
+        return List.copyOf(all);
+    }
+
     private List<CustomerEvent> readAllCustomerEvents() {
         List<CustomerEvent> all = new ArrayList<>();
         long after = 0L;
